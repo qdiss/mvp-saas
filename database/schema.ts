@@ -12,7 +12,7 @@ import { relations } from "drizzle-orm";
 
 // --- 1. ORGANIZATIONS ---
 export const organizations = pgTable("organizations", {
-  id: text("id").primaryKey(), // UUID → text
+ id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

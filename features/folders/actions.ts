@@ -11,6 +11,28 @@ import { CreateFolderInput, ensureUserProfile } from "@/lib/actions/folders";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
+// Type guard for database errors
+interface DatabaseError extends Error {
+  code?: string;
+  cause?: {
+    code?: string;
+  };
+}
+
+function isDatabaseError(error: unknown): error is DatabaseError {
+  return error instanceof Error;
+}
+
+function isTenantError(error: unknown): boolean {
+  if (!isDatabaseError(error)) return false;
+  
+  return (
+    error.cause?.code === "XX000" ||
+    error.code === "XX000" ||
+    error.message.includes("Tenant or user not found")
+  );
+}
+
 // Helper to get or create internal org ID
 async function getInternalOrgId(
   clerkOrgId: string,
@@ -41,15 +63,9 @@ async function getInternalOrgId(
     });
 
     return org.id;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Handle tenant not found error gracefully
-    const isTenantError =
-      error?.cause?.code === "XX000" ||
-      error?.code === "XX000" ||
-      (error instanceof Error &&
-        error.message.includes("Tenant or user not found"));
-
-    if (isTenantError) {
+    if (isTenantError(error)) {
       throw new Error(
         "Database not initialized. Please contact support or try again later."
       );
@@ -89,17 +105,11 @@ export async function createFolder(
 
     revalidatePath("/dashboard");
     return { success: true, data: folder };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error creating folder:", error);
 
     // Handle tenant errors
-    const isTenantError =
-      error?.cause?.code === "XX000" ||
-      error?.code === "XX000" ||
-      (error instanceof Error &&
-        error.message.includes("Tenant or user not found"));
-
-    if (isTenantError) {
+    if (isTenantError(error)) {
       return {
         success: false,
         error:
