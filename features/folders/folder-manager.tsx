@@ -116,9 +116,10 @@ interface Folder {
     createdBy: string
     createdAt: Date | null
     updatedAt: Date | null
-    color?: string
-    icon?: string
+    color: string | null
+    icon: string | null
 }
+
 
 interface FolderWithStats extends Folder {
     stats?: {
@@ -127,6 +128,7 @@ interface FolderWithStats extends Folder {
     }
     creatorName?: string
 }
+
 
 export default function FolderManager() {
     const router = useRouter()
@@ -268,6 +270,18 @@ export default function FolderManager() {
             setSubmitting(false)
         }
     }
+
+    const handleEdit = (folderId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        console.log('Edit folder:', folderId);
+        // You can later open an edit dialog or route to edit page
+    };
+
+    const handlePrint = (folderId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        console.log('Print folder:', folderId);
+        // You can later implement print functionality
+    };
 
     const handleDelete = async (folderId: string, e: React.MouseEvent) => {
         e.stopPropagation()
@@ -439,7 +453,7 @@ export default function FolderManager() {
                 </Dialog>
 
                 {filteredFolders.map((folder) => {
-                    const IconComponent = getIcon(folder.icon)
+                    const IconComponent = getIcon(folder.icon || 'Folder')
                     const folderColor = folder.color || '#10b981'
                     const productCount = folder.stats?.products || 0
                     const commentCount = folder.stats?.comments || 0

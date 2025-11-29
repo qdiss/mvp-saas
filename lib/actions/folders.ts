@@ -145,7 +145,7 @@ export async function getUserProfile(userId: string) {
           }
         : { fullName: "Unknown User", email: "", imageUrl: null },
     };
-  } catch (error) {
+  } catch {
     return {
       success: false,
       data: { fullName: "Unknown User", email: "", imageUrl: null },

@@ -29,7 +29,7 @@ import {
     FileText,
 } from "lucide-react"
 
-import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core"
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core"
 import {
     SortableContext,
     arrayMove,
@@ -206,7 +206,7 @@ export function ImagesTab({ myProduct, competitors, onUpdateProduct, onUpdateCom
         return () => { document.body.style.overflow = 'auto' }
     }, [isDragging])
 
-    const handleMyProductDragEnd = (event: any) => {
+    const handleMyProductDragEnd = (event: DragEndEvent) => {
         const { active, over } = event
         setIsDragging(false)
         if (!over) return
@@ -220,7 +220,7 @@ export function ImagesTab({ myProduct, competitors, onUpdateProduct, onUpdateCom
         }
     }
 
-    const handleCompetitorDragEnd = (compId: string) => (event: any) => {
+    const handleCompetitorDragEnd = (compId: string) => (event: DragEndEvent) => {
         const { active, over } = event
         setIsDragging(false)
         if (!over) return

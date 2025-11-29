@@ -114,7 +114,7 @@ export function NavUser({
                         <DropdownMenuSeparator />
 
                         <DropdownMenuItem
-                            onClick={() => signOut(() => window.location.href = "/")}
+                            onClick={() => signOut({ redirectUrl: "/" })}
                             className="text-red-600 focus:text-red-700 hover:text-red-700 cursor-pointer"
                         >
                             <LogOut />

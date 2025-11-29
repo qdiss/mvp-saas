@@ -7,6 +7,7 @@ import {
   organizations,
   organizationMappings,
 } from "@/database/schema";
+import { CreateFolderInput, ensureUserProfile } from "@/lib/actions/folders";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -22,7 +23,13 @@ async function getInternalOrgId(clerkOrgId: string): Promise<string> {
   }
 
   // Create new organization and mapping
-  const [org] = await db.insert(organizations).values({}).returning();
+  const [org] = await db
+    .insert(organizations)
+    .values({
+      id: crypto.randomUUID(),
+      name: "Unnamed Organization",
+    })
+    .returning();
 
   await db.insert(organizationMappings).values({
     clerkOrgId,
