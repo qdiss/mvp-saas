@@ -1,3 +1,23 @@
+//TODO: Refactor into smaller components
+//TODO: Add pagination or infinite scroll for large number of folders
+//TODO: Add search functionality
+//TODO: Improve accessibility features
+//TODO: Add tests for FolderManager
+//TODO: Optimize data fetching and state management
+//TODO: Add error handling for all async operations
+//TODO: Improve styling and responsiveness
+//TODO: Add loading skeletons for better UX
+//TODO: Implement folder editing functionality
+//TODO: Add confirmation modals for destructive actions
+//TODO: Optimize performance for large organizations with many folders
+//TODO: Add user permissions and roles for folder management
+//TODO: Integrate with backend APIs for real data
+//TODO: Add analytics tracking for folder interactions
+//TODO: Implement drag-and-drop for folder reordering
+//TODO: Add multi-select and bulk actions for folders
+//TODO: Add archiving functionality for folders
+//TODO: Add backend functionality for folder stats including products and comments and how many users are in each folder
+
 'use client'
 
 import { useState, useEffect } from 'react'

@@ -1,4 +1,19 @@
-//src/app/(auth)/dashboard/folder/[id]/page.tsx
+//TODO: Make this modular and split into smaller components
+//TODO: Add real data fetching from backend / database
+//TODO: Improve styling and responsiveness
+//TODO: Add error handling and loading states
+//TODO: Add tests
+//TODO: Optimize performance for large number of competitors / images
+//TODO: Add ability to delete images and comments
+//TODO: Add ability to edit competitor details
+//TODO: Connect to real Amazon API for product data
+//TODO: Add pagination or lazy loading for competitors
+//TODO: Improve accessibility
+//TODO: Add user authentication and permissions
+//TODO: Add analytics tracking
+//TODO: Refactor to use Zustand or Redux for state management
+//TODO: Fix styling inconsistencies
+//TODO: Clean up unused imports and code and make code more readable
 "use client"
 
 import React, { useState, useMemo, useCallback } from "react"
@@ -24,6 +39,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 
 import { useDropzone } from "react-dropzone"
+import { useRouter } from "next/navigation"
 
 // ---------------------- Types ----------------------
 type Product = {
@@ -242,7 +258,7 @@ export function ImagesTab({ myProduct, competitors, onUpdateProduct, onUpdateCom
                 <input {...getInputProps()} />
                 <div className={`bg-slate-50 rounded-lg p-3 border border-slate-200 h-28 flex flex-col justify-between ${isDragActive ? 'ring-2 ring-emerald-300' : ''}`}>
                     <h3 className="font-semibold text-slate-900 text-sm">{product.id === myProduct.id ? 'Your Product' : product.name}</h3>
-                    <p className="text-xs text-slate-600 line-clamp-2 min-h-[32px]">{product.name}</p>
+                    <p className="text-xs text-slate-600 line-clamp-2 min-h-8">{product.name}</p>
                     <p className="text-xs text-slate-500 font-medium">{product.photos.length} images</p>
                 </div>
                 <DndContext
@@ -333,6 +349,7 @@ export default function CompetitiveAnalysisPage({ params }: { params: { id: stri
 
     // Provjeri da li je ovo folder sa mock podacima
     const hasMockData = params.id === MOCK_DATA_FOLDER_ID
+    const router = useRouter()
 
     // Hardkodirani podaci - rade samo za specifican folder
     // Kasnije ces ovo povuci iz baze kada povezes Amazon API
@@ -360,7 +377,8 @@ export default function CompetitiveAnalysisPage({ params }: { params: { id: stri
                 <div className="max-w-[1400px] mx-auto">
                     <header className="mb-6">
                         <div className="flex items-center gap-4 mb-4">
-                            <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                            <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors" onClick={() => router.push('/dashboard')}
+                            >
                                 <ArrowLeft className="h-5 w-5 text-slate-600" />
                             </button>
                             <div className="flex-1">
@@ -391,19 +409,27 @@ export default function CompetitiveAnalysisPage({ params }: { params: { id: stri
             <div className="max-w-[1400px] mx-auto">
                 <header className="mb-6">
                     <div className="flex items-center gap-4 mb-4">
-                        <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><ArrowLeft className="h-5 w-5 text-slate-600" /></button>
+                        <button
+                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                            onClick={() => router.push('/dashboard')}
+                        >
+                            <ArrowLeft className="h-5 w-5 text-slate-600" />
+                        </button>
                         <div className="flex-1">
-                            <h1 className="text-2xl font-semibold text-slate-900">Eye Care Products - Competitive Analysis</h1>
-                            <p className="text-sm text-slate-500 mt-1">Compare your product with {selectedCompetitors.length} competitors</p>
+                            <h1 className="text-2xl font-semibold text-slate-900">
+                                Eye Care Products - Competitive Analysis
+                            </h1>
+                            <p className="text-sm text-slate-500 mt-1">
+                                Compare your product with {selectedCompetitors.length} competitors
+                            </p>
                         </div>
-                        <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2 font-medium"><Plus className="h-4 w-4" />Add Competitor</button>
                     </div>
 
                     <div className="grid grid-cols-5 gap-3">
                         <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-lg p-3 border border-emerald-200/50">
                             <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-emerald-700">Your Price</span><DollarSign className="h-3.5 w-3.5 text-emerald-600" /></div>
                             <p className="text-xl font-bold text-emerald-900">${myProduct.price}</p>
-                            <p className="text-xs text-emerald-600 mt-0.5">vs avg $19.99</p>
+                            <p className="text-xs text-emerald-600 mt-0.5">vs avg <b>$19.99</b></p>
                         </div>
                         <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-lg p-3 border border-blue-200/50">
                             <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-blue-700">Competitors</span><Package className="h-3.5 w-3.5 text-blue-600" /></div>
@@ -418,7 +444,7 @@ export default function CompetitiveAnalysisPage({ params }: { params: { id: stri
                         <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-lg p-3 border border-purple-200/50">
                             <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-purple-700">Images</span><FileImage className="h-3.5 w-3.5 text-purple-600" /></div>
                             <p className="text-xl font-bold text-purple-900">{myProduct.photos.length}</p>
-                            <p className="text-xs text-purple-600 mt-0.5">vs avg 5.2 images</p>
+                            <p className="text-xs text-purple-600 mt-0.5">vs avg <b>5.2 images</b></p>
                         </div>
                         <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-lg p-3 border border-rose-200/50">
                             <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-rose-700">Sponsored</span><Star className="h-3.5 w-3.5 text-rose-600" /></div>
