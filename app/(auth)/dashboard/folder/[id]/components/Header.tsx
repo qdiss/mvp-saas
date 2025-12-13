@@ -14,13 +14,13 @@ export function Header({ selectedCount }: HeaderProps) {
         <header className="mb-6">
             <div className="flex items-center gap-4 mb-4">
                 <button
-                    className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="p-2    rounded-lg transition-colors"
                     onClick={() => router.push('/dashboard')}
                 >
-                    <ArrowLeft className="h-5 w-5 text-slate-600" />
+                    <ArrowLeft className="h-5 w-5   " />
                 </button>
                 <div className="flex-1">
-                    <h1 className="text-2xl font-semibold text-slate-900">
+                    <h1 className="text-2xl font-semibold   ">
                         Eye Care Products - Competitive Analysis
                     </h1>
                     <p className="text-sm text-slate-500 mt-1">

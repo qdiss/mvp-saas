@@ -118,7 +118,7 @@ export function ImagesTab({ myProduct, competitors, onUpdateProduct, onUpdateCom
     }
 
     return (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="  rounded-xl border border-slate-200 p-6">
             <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${allColumns - 1}, minmax(0, 1fr)) 280px` }}>
                 {/* My Product */}
                 <ProductColumn
@@ -222,11 +222,11 @@ function ProductColumn({
 
     const textColor = isMyProduct
         ? 'text-emerald-900'
-        : 'text-slate-900'
+        : '  '
 
     const subTextColor = isMyProduct
         ? 'text-emerald-700'
-        : 'text-slate-600'
+        : '  '
 
     const countColor = isMyProduct
         ? 'text-emerald-600'
@@ -292,10 +292,10 @@ function ProductColumn({
                         >
                             <div className="text-center">
                                 <Plus className={`h-8 w-8 mx-auto mb-1 ${
-                                    isMyProduct ? 'text-emerald-400 group-hover:text-emerald-500' : 'text-slate-400 group-hover:text-slate-500'
+                                    isMyProduct ? 'text-emerald-400 group-hover:text-emerald-500' : '   group-hover:text-slate-500'
                                 }`} />
                                 <span className={`text-xs font-medium ${
-                                    isMyProduct ? 'text-emerald-600' : 'text-slate-600'
+                                    isMyProduct ? 'text-emerald-600' : '  '
                                 }`}>Add Image</span>
                             </div>
                         </button>
@@ -339,7 +339,7 @@ function CommentsColumn({
     return (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col h-full">
             <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-slate-900 text-sm">
+                <h3 className="font-semibold    text-sm">
                     {selectedImageIds.length > 0 ? `Comments (${selectedImageIds.length} selected)` : 'All Comments'}
                 </h3>
                 {selectedImageIds.length > 0 && (
@@ -379,7 +379,7 @@ function CommentsColumn({
                         <div className="text-xs text-slate-500">No comments for selected images yet.</div>
                     ) : (
                         selectedImagesComments.map(comment => (
-                            <div key={comment.id} className="p-2 rounded-lg border bg-white group relative">
+                            <div key={comment.id} className="p-2 rounded-lg border   group relative">
                                 <div className="text-xs text-slate-700 mb-1 pr-12">{comment.text}</div>
                                 <div className="flex items-center gap-1">
                                     <img 
@@ -402,7 +402,7 @@ function CommentsColumn({
                         <div className="text-xs text-slate-500">No comments yet. Select images to add comments.</div>
                     ) : (
                         allComments.map(comment => (
-                            <div key={comment.id} className="p-2 rounded-lg border bg-white">
+                            <div key={comment.id} className="p-2 rounded-lg border  ">
                                 <div className="text-xs text-slate-700 mb-1">{comment.text}</div>
                                 <div className="flex items-center gap-1">
                                     <img 

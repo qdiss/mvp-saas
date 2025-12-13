@@ -6,7 +6,6 @@ import {
   profiles,
   userProducts,
   comparisons,
-  comparisonMessages,
 } from "@/database/schema";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -104,12 +103,12 @@ export async function getFolderStats(folderId: string) {
     });
 
     let totalComments = 0;
-    for (const comparison of folderComparisons) {
-      const messages = await db.query.comparisonMessages.findMany({
-        where: eq(comparisonMessages.comparisonId, comparison.id),
-      });
-      totalComments += messages.length;
-    }
+    // for (const comparison of folderComparisons) {
+    //   const messages = await db.query.comparisonMessages.findMany({
+    //     where: eq(comparisonMessages.comparisonId, comparison.id),
+    //   });
+    //   totalComments += messages.length;
+    // }
 
     return {
       success: true,

@@ -11,9 +11,9 @@ type CompetitorsListProps = {
 
 export function CompetitorsList({ competitors, myProduct, onToggleCompetitor }: CompetitorsListProps) {
     return (
-        <div className="bg-white rounded-xl border border-slate-200">
+        <div className="  rounded-xl border border-slate-200">
             <div className="bg-slate-50 border-b border-slate-200 p-4 flex items-center justify-between">
-                <h2 className="font-semibold text-slate-900">
+                <h2 className="font-semibold   ">
                     All Competitors ({competitors.length})
                 </h2>
                 <button className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition-colors">
@@ -64,7 +64,7 @@ function CompetitorItem({ competitor, myProduct, onToggle }: CompetitorItemProps
                 />
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-slate-900 text-sm">
+                        <h3 className="font-semibold    text-sm">
                             {competitor.name}
                         </h3>
                         {competitor.isSponsored && (
@@ -77,7 +77,7 @@ function CompetitorItem({ competitor, myProduct, onToggle }: CompetitorItemProps
                 </div>
                 <div className="flex items-center gap-4">
                     <div className="text-right min-w-[100px]">
-                        <p className="text-lg font-bold text-slate-900">
+                        <p className="text-lg font-bold   ">
                             ${competitor.price}
                         </p>
                         <p className={`text-xs ${isHigher ? 'text-red-600' : 'text-green-600'}`}>
@@ -85,8 +85,8 @@ function CompetitorItem({ competitor, myProduct, onToggle }: CompetitorItemProps
                             {isHigher ? ' higher' : ' lower'}
                         </p>
                     </div>
-                    <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                        <Eye className="h-4 w-4 text-slate-400" />
+                    <button className="p-2    rounded-lg transition-colors">
+                        <Eye className="h-4 w-4   " />
                     </button>
                 </div>
             </div>

@@ -109,7 +109,7 @@ export function SortableImage({
                                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
                                 : isMyProduct 
                                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                                    : 'bg-white hover:bg-slate-50 text-slate-900'
+                                    : '  hover:bg-slate-50   '
                         } px-3 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-colors`}
                     >
                         {isSelected ? '✓ Selected' : 'Select'}

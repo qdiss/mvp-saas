@@ -1,23 +1,3 @@
-//TODO: Refactor into smaller components
-//TODO: Add pagination or infinite scroll for large number of folders
-//TODO: Add search functionality
-//TODO: Improve accessibility features
-//TODO: Add tests for FolderManager
-//TODO: Optimize data fetching and state management
-//TODO: Add error handling for all async operations
-//TODO: Improve styling and responsiveness
-//TODO: Add loading skeletons for better UX
-//TODO: Implement folder editing functionality
-//TODO: Add confirmation modals for destructive actions
-//TODO: Optimize performance for large organizations with many folders
-//TODO: Add user permissions and roles for folder management
-//TODO: Integrate with backend APIs for real data
-//TODO: Add analytics tracking for folder interactions
-//TODO: Implement drag-and-drop for folder reordering
-//TODO: Add multi-select and bulk actions for folders
-//TODO: Add archiving functionality for folders
-//TODO: Add backend functionality for folder stats including products and comments and how many users are in each folder
-
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -33,6 +13,14 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -65,13 +53,15 @@ import {
     File,
     MessageSquare,
     Edit2,
-    Printer
+    Printer,
+    AlertTriangle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
     createFolder,
     getFolders,
     deleteFolder,
+    updateFolder,
     getFolderStats,
     getUserProfile,
     type CreateFolderInput as BaseFolderInput
@@ -120,7 +110,6 @@ interface Folder {
     icon: string | null
 }
 
-
 interface FolderWithStats extends Folder {
     stats?: {
         products: number
@@ -128,7 +117,6 @@ interface FolderWithStats extends Folder {
     }
     creatorName?: string
 }
-
 
 export default function FolderManager() {
     const router = useRouter()
@@ -144,6 +132,17 @@ export default function FolderManager() {
     const [sortBy, setSortBy] = useState('date')
     const [filterCategory, setFilterCategory] = useState('all')
     const [filterOwner, setFilterOwner] = useState('all')
+    
+    // Edit mode state
+    const [editMode, setEditMode] = useState(false)
+    const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
+    
+    // Delete confirmation state
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [deletingFolder, setDeletingFolder] = useState<FolderWithStats | null>(null)
+    const [deleteConfirmText, setDeleteConfirmText] = useState('')
+    const [deleting, setDeleting] = useState(false)
+
     const [formData, setFormData] = useState<CreateFolderInput>({
         name: '',
         description: '',
@@ -152,7 +151,6 @@ export default function FolderManager() {
         icon: 'Folder'
     })
 
-    // Extract unique categories and owners from folders
     const categories = ['all', ...Array.from(new Set(folders.map(f => f.category)))]
     const owners = ['all', ...Array.from(new Set(folders.map(f => f.creatorName || f.createdBy)))]
 
@@ -178,7 +176,6 @@ export default function FolderManager() {
             const result = await getFolders(organization.id)
 
             if (result.success && result.data) {
-                // Fetch stats and user profiles for each folder
                 const foldersWithData = await Promise.all(
                     result.data.map(async (folder) => {
                         const statsResult = await getFolderStats(folder.id)
@@ -228,6 +225,18 @@ export default function FolderManager() {
         setFilteredFolders(filtered)
     }
 
+    const resetForm = () => {
+        setFormData({
+            name: '',
+            description: '',
+            category: '',
+            color: '#10b981',
+            icon: 'Folder'
+        })
+        setEditMode(false)
+        setEditingFolderId(null)
+    }
+
     const handleSubmit = async () => {
         if (!formData.name || !formData.category || !organization?.id || !user?.id) {
             toast.error('Validation Error', {
@@ -239,64 +248,108 @@ export default function FolderManager() {
         setSubmitting(true)
 
         try {
-            const result = await createFolder(
-                organization.id,
-                user.id,
-                user.emailAddresses[0]?.emailAddress || '',
-                formData,
-                user.fullName,
-                user.imageUrl
-            )
+            if (editMode && editingFolderId) {
+                // Update existing folder
+                const result = await updateFolder(editingFolderId, organization.id, formData)
 
-            if (result.success) {
-                toast.success('Success', {
-                    description: 'Folder created successfully'
-                })
-
-                setFormData({ name: '', description: '', category: '', color: '#10b981', icon: 'Folder' })
-                setDialogOpen(false)
-                await fetchFolders()
+                if (result.success) {
+                    toast.success('Success', {
+                        description: 'Folder updated successfully'
+                    })
+                    resetForm()
+                    setDialogOpen(false)
+                    await fetchFolders()
+                } else {
+                    toast.error('Error', {
+                        description: result.error || 'Failed to update folder',
+                    })
+                }
             } else {
-                toast.error('Error', {
-                    description: result.error || 'Failed to create folder',
-                })
+                // Create new folder
+                const result = await createFolder(
+                    organization.id,
+                    user.id,
+                    user.emailAddresses[0]?.emailAddress || '',
+                    formData,
+                    user.fullName,
+                    user.imageUrl
+                )
+
+                if (result.success) {
+                    toast.success('Success', {
+                        description: 'Folder created successfully'
+                    })
+                    resetForm()
+                    setDialogOpen(false)
+                    await fetchFolders()
+                } else {
+                    toast.error('Error', {
+                        description: result.error || 'Failed to create folder',
+                    })
+                }
             }
         } catch (error) {
-            console.error('Error creating folder:', error)
+            console.error('Error saving folder:', error)
             toast.error('Error', {
-                description: 'Failed to create folder',
+                description: editMode ? 'Failed to update folder' : 'Failed to create folder',
             })
         } finally {
             setSubmitting(false)
         }
     }
 
-    const handleEdit = (folderId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        console.log('Edit folder:', folderId);
-        // You can later open an edit dialog or route to edit page
-    };
+    const handleEdit = (folder: FolderWithStats, e: React.MouseEvent) => {
+        e.stopPropagation()
+        
+        setEditMode(true)
+        setEditingFolderId(folder.id)
+        setFormData({
+            name: folder.name,
+            description: folder.description || '',
+            category: folder.category,
+            color: folder.color || '#10b981',
+            icon: folder.icon || 'Folder'
+        })
+        setDialogOpen(true)
+    }
 
     const handlePrint = (folderId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        console.log('Print folder:', folderId);
-        // You can later implement print functionality
-    };
-
-    const handleDelete = async (folderId: string, e: React.MouseEvent) => {
         e.stopPropagation()
+        console.log('Print folder:', folderId)
+        toast.info('Coming Soon', {
+            description: 'Print functionality will be available soon'
+        })
+    }
 
-        if (!organization?.id) return
+    const handleDeleteClick = (folder: FolderWithStats, e: React.MouseEvent) => {
+        e.stopPropagation()
+        setDeletingFolder(folder)
+        setDeleteConfirmText('')
+        setDeleteDialogOpen(true)
+    }
 
-        if (!confirm('Are you sure you want to delete this folder?')) return
+    const handleDeleteConfirm = async () => {
+        if (!deletingFolder || !organization?.id) return
+
+        if (deleteConfirmText !== deletingFolder.name) {
+            toast.error('Validation Error', {
+                description: 'Folder name does not match. Please type the exact name to confirm deletion.',
+            })
+            return
+        }
+
+        setDeleting(true)
 
         try {
-            const result = await deleteFolder(folderId, organization.id)
+            const result = await deleteFolder(deletingFolder.id, organization.id)
 
             if (result.success) {
                 toast.success('Success', {
                     description: 'Folder deleted successfully'
                 })
+                setDeleteDialogOpen(false)
+                setDeletingFolder(null)
+                setDeleteConfirmText('')
                 await fetchFolders()
             } else {
                 toast.error('Error', {
@@ -308,6 +361,8 @@ export default function FolderManager() {
             toast.error('Error', {
                 description: 'Failed to delete folder',
             })
+        } finally {
+            setDeleting(false)
         }
     }
 
@@ -317,6 +372,13 @@ export default function FolderManager() {
 
     const handleFolderClick = (folderId: string, folderName: string) => {
         router.push(`/dashboard/folder/${folderId}?name=${encodeURIComponent(folderName)}`)
+    }
+
+    const handleDialogClose = (open: boolean) => {
+        setDialogOpen(open)
+        if (!open) {
+            resetForm()
+        }
     }
 
     const getIcon = (iconName?: string) => {
@@ -437,13 +499,13 @@ export default function FolderManager() {
             {/* Folders Grid/List */}
             <div className={viewMode === 'grid' ? 'flex flex-wrap gap-4' : 'flex flex-col gap-2'}>
                 {/* New Project Button */}
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
                     <DialogTrigger asChild>
                         <div
                             className={
                                 viewMode === 'grid'
-                                    ? 'h-48 w-56 cursor-pointer rounded-lg border-2 border-dashed hover:border-emerald-500 hover:bg-emerald-50/50 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground'
-                                    : 'h-20 cursor-pointer rounded-lg border-2 border-dashed hover:border-emerald-500 hover:bg-emerald-50/50 transition-all flex items-center justify-center gap-2 text-muted-foreground'
+                                    ? 'h-48 w-56 cursor-pointer rounded-lg border-2 border-dashed hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/50 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground'
+                                    : 'h-20 cursor-pointer rounded-lg border-2 border-dashed hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/50 transition-all flex items-center justify-center gap-2 text-muted-foreground'
                             }
                         >
                             <FolderPlus className="h-6 w-6" />
@@ -458,7 +520,6 @@ export default function FolderManager() {
                     const productCount = folder.stats?.products || 0
                     const commentCount = folder.stats?.comments || 0
 
-                    // Format updated time
                     const updatedTime = folder.updatedAt
                         ? new Date(folder.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                         : 'Recently'
@@ -490,23 +551,23 @@ export default function FolderManager() {
                                         className="rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-700 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm min-w-40"
                                     >
                                         <DropdownMenuItem
-                                            onClick={(e) => handleEdit(folder.id, e)}
-                                            className="flex items-center px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors  cursor-pointer"
+                                            onClick={(e) => handleEdit(folder, e)}
+                                            className="flex items-center px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
                                         >
-                                            <Edit2 className="h-1 w-1 mr-2 text-neutral-500" />
+                                            <Edit2 className="h-4 w-4 mr-2 text-neutral-500" />
                                             Edit
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
                                             onClick={(e) => handlePrint(folder.id, e)}
-                                            className="flex items-center px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors  cursor-pointer"
+                                            className="flex items-center px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
                                         >
                                             <Printer className="h-4 w-4 mr-2 text-neutral-500" />
                                             Print
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
-                                            onClick={(e) => handleDelete(folder.id, e)}
-                                            className="flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors  cursor-pointer"
+                                            onClick={(e) => handleDeleteClick(folder, e)}
+                                            className="flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
                                         >
                                             <Trash2 className="h-4 w-4 mr-2 text-red-500" />
                                             Delete
@@ -514,7 +575,6 @@ export default function FolderManager() {
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </div>
-
 
                             {viewMode === 'grid' ? (
                                 <>
@@ -590,12 +650,18 @@ export default function FolderManager() {
                 )}
             </div>
 
-            {/* Create Dialog */}
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            {/* Create/Edit Dialog */}
+            <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
                 <DialogContent className="sm:max-w-[525px]">
                     <DialogHeader>
-                        <DialogTitle>Create a new folder</DialogTitle>
-                        <DialogDescription>Fill in the details below to create a new folder.</DialogDescription>
+                        <DialogTitle>
+                            {editMode ? 'Edit folder' : 'Create a new folder'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {editMode 
+                                ? 'Update the details of your folder below.' 
+                                : 'Fill in the details below to create a new folder.'}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="grid gap-2">
@@ -635,8 +701,11 @@ export default function FolderManager() {
                                         key={color.value}
                                         type="button"
                                         onClick={() => handleInputChange('color', color.value)}
-                                        className={`w-10 h-10 rounded-lg transition-all ${formData.color === color.value ? 'ring-2 ring-offset-2 ring-emerald-500 scale-110' : ''
-                                            }`}
+                                        className={`w-10 h-10 rounded-lg transition-all ${
+                                            formData.color === color.value 
+                                                ? 'ring-2 ring-offset-2 ring-emerald-500 scale-110' 
+                                                : ''
+                                        }`}
                                         style={{ backgroundColor: color.value }}
                                         title={color.label}
                                     />
@@ -653,10 +722,11 @@ export default function FolderManager() {
                                             key={icon.value}
                                             type="button"
                                             onClick={() => handleInputChange('icon', icon.value)}
-                                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${formData.icon === icon.value
-                                                ? 'border-emerald-500 bg-emerald-50 scale-110'
-                                                : 'border-gray-200 hover:border-emerald-300'
-                                                }`}
+                                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                                                formData.icon === icon.value
+                                                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950 scale-110'
+                                                    : 'border-gray-200 hover:border-emerald-300'
+                                            }`}
                                             title={icon.label}
                                         >
                                             <Icon className="h-5 w-5" />
@@ -670,18 +740,74 @@ export default function FolderManager() {
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => setDialogOpen(false)}
+                            onClick={() => handleDialogClose(false)}
                             disabled={submitting}
                         >
                             Cancel
                         </Button>
                         <Button onClick={handleSubmit} disabled={submitting}>
                             {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Save folder
+                            {editMode ? 'Update folder' : 'Save folder'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <AlertTriangle className="h-5 w-5 text-red-600" />
+                            Delete Folder
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="space-y-3">
+                            <p>
+                                You are about to delete <span className="font-semibold text-foreground">{deletingFolder?.name}</span>.
+                                This action cannot be undone.
+                            </p>
+                            <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-900 rounded-lg p-3">
+                                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                                    All products, comments, and data associated with this folder will be permanently deleted.
+                                </p>
+                            </div>
+                            <div className="space-y-2 pt-2">
+                                <Label htmlFor="delete-confirm" className="text-sm font-medium">
+                                    Type <span className="font-mono font-semibold text-foreground">{deletingFolder?.name}</span> to confirm:
+                                </Label>
+                                <Input
+                                    id="delete-confirm"
+                                    placeholder="Enter folder name"
+                                    value={deleteConfirmText}
+                                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                    className="font-mono"
+                                />
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setDeleteDialogOpen(false)
+                                setDeletingFolder(null)
+                                setDeleteConfirmText('')
+                            }}
+                            disabled={deleting}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteConfirm}
+                            disabled={deleting || deleteConfirmText !== deletingFolder?.name}
+                        >
+                            {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Delete Folder
+                        </Button>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }

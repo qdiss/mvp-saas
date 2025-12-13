@@ -1,20 +1,21 @@
 //app/(auth)/layout.tsx
 
-import type { Metadata } from "next"
-import { ClerkProvider } from "@clerk/nextjs"
-import { ThemeProvider } from "@/components/theme-provider"
-import "../globals.css"
-import { Toaster } from "@/components/ui/sonner"
+import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
+import { ThemeProvider } from "@/components/theme-provider";
+import "../globals.css";
+import { Toaster } from "@/components/ui/sonner";
+import { MockModeIndicator } from "@/components/MockDataIndicator";
 
 export const metadata: Metadata = {
   title: "Compare Products Dashboard",
   description: "Minimal viable product for comparing products from Amazon.",
-}
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <ClerkProvider>
@@ -28,9 +29,10 @@ export default function RootLayout({
           >
             {children}
             <Toaster />
+            <MockModeIndicator />
           </ThemeProvider>
         </body>
       </html>
     </ClerkProvider>
-  )
+  );
 }

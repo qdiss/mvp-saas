@@ -22,7 +22,7 @@ export function ComparisonMetric({ label, myValue, competitorValues }: Compariso
                 {competitorValues.map((value, idx) => (
                     <div
                         key={idx}
-                        className="text-slate-600 bg-slate-50 rounded-lg px-3 py-2 text-sm text-center border border-slate-200"
+                        className="   bg-slate-50 rounded-lg px-3 py-2 text-sm text-center border border-slate-200"
                     >
                         {value}
                     </div>

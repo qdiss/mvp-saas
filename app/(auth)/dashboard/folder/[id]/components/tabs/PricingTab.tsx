@@ -23,7 +23,7 @@ export function PricingTab({ myProduct, competitors }: PricingTabProps) {
         : "0.00"
 
     return (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="  rounded-xl border border-slate-200 p-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-6 mb-8">
                 <div className="text-center p-6 bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl border-2 border-emerald-200">
@@ -62,11 +62,11 @@ export function PricingTab({ myProduct, competitors }: PricingTabProps) {
                             className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
                         >
                             <div className="flex-1">
-                                <p className="font-semibold text-slate-900">{comp.name}</p>
-                                <p className="text-sm text-slate-600 mt-1">{comp.asin}</p>
+                                <p className="font-semibold   ">{comp.name}</p>
+                                <p className="text-sm    mt-1">{comp.asin}</p>
                             </div>
                             <div className="text-right ml-4">
-                                <p className="text-2xl font-bold text-slate-900">${comp.price}</p>
+                                <p className="text-2xl font-bold   ">${comp.price}</p>
                                 <p className={`text-sm font-medium ${
                                     isHigher ? 'text-red-600' : 'text-green-600'
                                 }`}>
