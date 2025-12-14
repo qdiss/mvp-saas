@@ -11,6 +11,8 @@ export interface Product {
   photos: string[];
   selected?: boolean;
 
+  image?: string;
+
   // Amazon specific
   asin?: string;
   brand?: string;
@@ -48,6 +50,9 @@ export interface Product {
   sellerName?: string;
   sellerRating?: number;
 
+  // Sponsored status
+  isSponsored?: boolean;
+
   // Variations
   hasVariations?: boolean;
   variationCount?: number;
@@ -67,4 +72,23 @@ export interface Product {
   addedAt?: string;
   position?: number;
   lastFetchedAt?: string;
+
+  // ✅ Dodaj comparisonId
+  comparisonId?: string;
+}
+
+export interface Comment {
+  id: string;
+  comparisonId?: string;
+  content: string;
+  images: string[]; // Array of image URLs
+  imageCount: number;
+  status: "open" | "resolved" | "archived";
+  assignedTo?: string;
+  dueDate?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }

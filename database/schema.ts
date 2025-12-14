@@ -519,12 +519,29 @@ export const comparisonCompetitors = pgTable(
 // IMAGE COMMENTS
 // ============================================
 
+// Dodaj novu tabelu za vezivanje komentara sa slikama
+export const commentImages = pgTable(
+  "comment_images",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    commentId: uuid("comment_id")
+      .references(() => imageComments.id, { onDelete: "cascade" })
+      .notNull(),
+    imageUrl: text("image_url").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    commentIdx: index("comment_images_comment_idx").on(table.commentId),
+    imageUrlIdx: index("comment_images_url_idx").on(table.imageUrl),
+  })
+);
+
+// Ažuriraj imageComments tabelu - ukloni imageUrl odavde jer će biti u comment_images
 export const imageComments = pgTable(
   "image_comments",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    imageId: uuid("image_id").notNull(),
-    comparisonId: uuid("comparison_id"),
+    id: uuid("id").defaultRandom().primaryKey(),
+    comparisonId: uuid("comparison_id").references(() => comparisons.id),
     content: text("content").notNull(),
     xPosition: decimal("x_position", { precision: 5, scale: 2 }),
     yPosition: decimal("y_position", { precision: 5, scale: 2 }),
@@ -538,7 +555,6 @@ export const imageComments = pgTable(
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => ({
-    imageIdx: index("image_comments_image_idx").on(table.imageId),
     comparisonIdx: index("image_comments_comparison_idx").on(
       table.comparisonId
     ),
@@ -701,14 +717,10 @@ export const productImagesRelations = relations(
   })
 );
 
-export const imageCommentRelations = relations(imageComments, ({ one }) => ({
-  image: one(productImages, {
-    fields: [imageComments.imageId],
-    references: [productImages.id],
-  }),
-  comparison: one(comparisons, {
-    fields: [imageComments.comparisonId],
-    references: [comparisons.id],
+export const commentImagesRelations = relations(commentImages, ({ one }) => ({
+  comment: one(imageComments, {
+    fields: [commentImages.commentId],
+    references: [imageComments.id],
   }),
 }));
 

@@ -1,5 +1,5 @@
 // app/api/products/fetch/route.ts
-// FIXED: Označava "My Product", competitors u comparisonCompetitors, vraća SVE podatke
+// OPTIMIZED: Uses REAL Amazon related products (also_viewed priority)
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -24,21 +24,19 @@ async function fetchFromRainforest(params: any) {
   });
 
   const response = await fetch(url.toString());
-
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Rainforest API error: ${error}`);
+    throw new Error(`Rainforest API error: ${response.statusText}`);
   }
 
   return response.json();
 }
 
-// Spremi proizvod u bazu SA SVIM PODACIMA
-async function saveProductToDatabase(
+// Save FULL product data
+async function saveFullProductToDatabase(
   productData: any,
-  marketplace: string = "com",
-  isMyProduct: boolean = false,
-  comparisonId: string | null = null
+  marketplace: string,
+  isMyProduct: boolean,
+  comparisonId: string | null
 ) {
   const {
     asin,
@@ -58,50 +56,40 @@ async function saveProductToDatabase(
     videos,
     frequently_bought_together,
     also_viewed,
-    variants,
   } = productData;
 
-  // KOMPLETAN INSERT SA SVIM POLJIMA
   const productRecord = await db
     .insert(amazonProducts)
     .values({
-      asin: asin,
+      asin,
       marketplace: marketplace as any,
-      title: title,
+      title,
       brand: brand || null,
-      link: link,
+      link,
+      isMyProduct,
+      comparisonId,
 
-      // OZNAČAVANJE MY PRODUCT
-      isMyProduct: isMyProduct,
-      comparisonId: comparisonId,
-
-      // Pricing - DETALJNO
+      // Pricing
       price: buybox_winner?.price?.value?.toString() || null,
       currency: buybox_winner?.price?.currency || "USD",
       priceSymbol: buybox_winner?.price?.symbol || "$",
       priceRaw: buybox_winner?.price?.raw || null,
-
-      // RRP/List Price
       rrpValue: buybox_winner?.rrp?.value?.toString() || null,
       rrpRaw: buybox_winner?.rrp?.raw || null,
-
-      // Savings
       savingsAmount: buybox_winner?.savings?.amount?.toString() || null,
       savingsPercent: buybox_winner?.savings?.percentage?.toString() || null,
-
-      // Coupons & Deals
       hasCoupon: buybox_winner?.coupon?.badge ? true : false,
       couponText: buybox_winner?.coupon?.text || null,
       dealType: productData.deal_type || null,
       dealBadge: productData.deal_badge || null,
 
-      // Ratings & Reviews
+      // Ratings
       rating: rating?.toString() || null,
       ratingsTotal: ratings_total || 0,
       reviewCount: ratings_total || 0,
       ratingBreakdown: productData.rating_breakdown || null,
 
-      // Categories - KOMPLETAN
+      // Categories
       categories: categories || null,
       categoriesFlat: categories
         ? categories.map((c: any) => c.name).join(" > ")
@@ -119,7 +107,7 @@ async function saveProductToDatabase(
       keywords: productData.keywords || null,
       keywordsList: productData.keywords_list || null,
 
-      // Bestseller Rank
+      // Bestseller
       bestsellerRank: bestsellers_rank || null,
       bestsellerRankFlat: bestsellers_rank
         ? bestsellers_rank
@@ -127,26 +115,21 @@ async function saveProductToDatabase(
             .join(", ")
         : null,
 
-      // Sales
-      recentSales: productData.more_buying_choices?.[0]?.condition_note || null,
-
-      // Images - SVE SLIKE
+      // Images
       mainImageUrl: main_image?.link || null,
       imageUrls: images?.map((img: any) => img.link) || [],
       imagesCount: images?.length || 0,
       has360View: productData.has_360_view || false,
       hasVideo: videos && videos.length > 0 ? true : false,
 
-      // Features - SVE FEATURE BULLETS
+      // Features
       featureBullets: feature_bullets || [],
       featureBulletsCount: feature_bullets?.length || 0,
       featureBulletsFlat: feature_bullets ? feature_bullets.join(" ") : null,
-
-      // Description
       description: description || null,
       descriptionHtml: productData.description_html || null,
 
-      // Specifications - SVE SPECS
+      // Specifications
       specifications: specifications || null,
       specificationsFlat: specifications
         ? specifications.map((s: any) => `${s.name}: ${s.value}`).join("; ")
@@ -161,10 +144,6 @@ async function saveProductToDatabase(
       material: productData.product_information?.material || null,
       color: productData.product_information?.color || null,
       size: productData.product_information?.size || null,
-      itemVolume: productData.product_information?.item_volume || null,
-      dateFirstAvailable: productData.product_information?.date_first_available
-        ? new Date(productData.product_information.date_first_available)
-        : null,
 
       // Availability
       isInStock: buybox_winner?.availability?.raw !== "Currently unavailable",
@@ -184,7 +163,7 @@ async function saveProductToDatabase(
       primeShippingSpeed: buybox_winner?.shipping?.raw || null,
       hasFreeReturns: buybox_winner?.returns?.raw?.includes("FREE") || false,
 
-      // Seller Info
+      // Seller
       thirdPartySeller: buybox_winner?.fulfillment?.third_party_seller || null,
       sellerName: buybox_winner?.fulfillment?.third_party_seller?.name || null,
 
@@ -201,10 +180,10 @@ async function saveProductToDatabase(
 
       // Variations
       isBundle: productData.is_bundle || false,
-      hasVariations: variants && variants.length > 1,
-      variationCount: variants?.length || 0,
+      hasVariations: productData.variants && productData.variants.length > 1,
+      variationCount: productData.variants?.length || 0,
       variationTheme: productData.variation_theme || null,
-      availableVariations: variants || null,
+      availableVariations: productData.variants || null,
 
       // Related Products
       frequentlyBoughtTogether: frequently_bought_together || null,
@@ -214,10 +193,8 @@ async function saveProductToDatabase(
       questionCount: productData.questions?.total || 0,
       topQuestions: productData.questions?.results || null,
 
-      // KOMPLETAN RAW DATA
+      // Raw data
       rawData: productData,
-
-      // Metadata
       lastFetchedAt: new Date(),
       fetchCount: 1,
       dataQuality: 100,
@@ -230,26 +207,23 @@ async function saveProductToDatabase(
         price: buybox_winner?.price?.value?.toString() || null,
         rating: rating?.toString() || null,
         ratingsTotal: ratings_total || 0,
-        isInStock: buybox_winner?.availability?.raw !== "Currently unavailable",
-        isMyProduct: isMyProduct, // Update flag
-        comparisonId: comparisonId, // Update comparison link
+        isMyProduct,
+        comparisonId,
         lastFetchedAt: new Date(),
         updatedAt: new Date(),
-        rawData: productData, // Update raw data
+        rawData: productData,
       },
     })
     .returning();
 
-  // Spremi SVE SLIKE
+  // Save images
   if (images && images.length > 0) {
-    // Delete old images
     await db.delete(productImages).where(eq(productImages.asin, asin));
 
-    // Insert new images
     const imageRecords = images.slice(0, 8).map((img: any, index: number) => ({
-      asin: asin,
+      asin,
       imageUrl: img.link,
-      variant: img.variant || ((index === 0 ? "MAIN" : `PT0${index}`) as any),
+      variant: (index === 0 ? "MAIN" : `PT0${index}`) as any,
       position: index,
       detectedAt: new Date(),
       isNew: true,
@@ -261,34 +235,130 @@ async function saveProductToDatabase(
   return productRecord[0];
 }
 
-// Pronađi konkurente (also_viewed + fallback na category search)
-async function findCompetitorsOptimized(
-  mainProduct: any,
-  marketplace: string = "com"
+// Simplifikovana funkcija - SAMO similar_to_consider
+async function getRealRelatedProducts(
+  productData: any,
+  marketplace: string = "com",
+  limit: number = 10
 ) {
   const competitors: any[] = [];
+  const mainProduct = productData.product;
 
-  // 1. Koristi also_viewed
-  if (mainProduct.also_viewed && mainProduct.also_viewed.length > 0) {
-    competitors.push(...mainProduct.also_viewed.slice(0, 10));
-  }
+  console.log(`[RELATED] Looking for up to ${limit} related products...`);
 
-  // 2. Koristi frequently_bought_together
-  if (competitors.length < 10 && mainProduct.frequently_bought_together) {
-    const remaining = 10 - competitors.length;
-    competitors.push(
-      ...mainProduct.frequently_bought_together.slice(0, remaining)
+  // 1. PRIORITY: Similar to Consider
+  if (
+    productData.similar_to_consider?.products &&
+    productData.similar_to_consider.products.length > 0
+  ) {
+    console.log(
+      `[RELATED] ✓ Found ${productData.similar_to_consider.products.length} from similar_to_consider`
     );
+
+    const fromSimilar = productData.similar_to_consider.products
+      .slice(0, limit)
+      .map((item: any) => ({
+        asin: item.asin,
+        title: item.title,
+        price: item.price?.value || 0,
+        currency: item.price?.currency || "USD",
+        rating: item.rating || 0,
+        ratingsTotal: item.ratings_total || 0,
+        imageUrl: item.image,
+        link: item.link,
+        brand: item.brand,
+        source: "similar_to_consider",
+      }));
+
+    competitors.push(...fromSimilar);
   }
 
-  // 3. FALLBACK: Ako nema dovoljno, search po kategoriji
-  if (competitors.length < 5) {
-    try {
-      console.log(
-        `[FETCH] Not enough competitors from also_viewed, searching by category...`
-      );
+  // 2. FALLBACK: Also Viewed
+  if (
+    competitors.length < limit &&
+    productData.also_viewed &&
+    productData.also_viewed.length > 0
+  ) {
+    console.log(`[RELATED] Adding from also_viewed...`);
+    const remaining = limit - competitors.length;
 
-      // Uzmi prvu kategoriju ili brand
+    const fromAlsoViewed = productData.also_viewed
+      .slice(0, remaining)
+      .map((item: any) => ({
+        asin: item.asin,
+        title: item.title,
+        price: item.price?.value || 0,
+        currency: item.price?.currency || "USD",
+        rating: item.rating || 0,
+        ratingsTotal: item.ratings_total || 0,
+        imageUrl: item.image,
+        link: item.link,
+        brand: item.brand,
+        source: "also_viewed",
+      }));
+
+    competitors.push(...fromAlsoViewed);
+  }
+
+  // 3. FALLBACK: Also Bought
+  if (
+    competitors.length < limit &&
+    productData.also_bought &&
+    productData.also_bought.length > 0
+  ) {
+    console.log(`[RELATED] Adding from also_bought...`);
+    const remaining = limit - competitors.length;
+
+    const fromAlsoBought = productData.also_bought
+      .slice(0, remaining)
+      .map((item: any) => ({
+        asin: item.asin,
+        title: item.title,
+        price: item.price?.value || 0,
+        currency: item.price?.currency || "USD",
+        rating: item.rating || 0,
+        ratingsTotal: item.ratings_total || 0,
+        imageUrl: item.image,
+        link: item.link,
+        brand: item.brand,
+        source: "also_bought",
+      }));
+
+    competitors.push(...fromAlsoBought);
+  }
+
+  // 4. FALLBACK: Frequently Bought Together
+  if (
+    competitors.length < limit &&
+    productData.frequently_bought_together?.products &&
+    productData.frequently_bought_together.products.length > 0
+  ) {
+    console.log(`[RELATED] Adding from frequently_bought_together...`);
+    const remaining = limit - competitors.length;
+
+    const fromFBT = productData.frequently_bought_together.products
+      .filter((item: any) => item.asin !== mainProduct.asin)
+      .slice(0, remaining)
+      .map((item: any) => ({
+        asin: item.asin,
+        title: item.title,
+        price: item.price?.value || 0,
+        currency: item.price?.currency || "USD",
+        rating: 0,
+        ratingsTotal: 0,
+        imageUrl: item.image,
+        link: item.link,
+        brand: null,
+        source: "frequently_bought_together",
+      }));
+
+    competitors.push(...fromFBT);
+  }
+
+  // 5. LAST RESORT: Category search (samo ako ima manje od 3)
+  if (competitors.length < 3) {
+    console.log(`[RELATED] Less than 3 products, searching by category...`);
+    try {
       const searchTerm =
         mainProduct.categories?.[0]?.name ||
         mainProduct.brand ||
@@ -298,45 +368,56 @@ async function findCompetitorsOptimized(
         type: "search",
         amazon_domain: `amazon.${marketplace}`,
         search_term: searchTerm,
-        max_page: 1, // Samo prva stranica
+        max_page: 1,
       });
 
-      if (
-        searchResults.search_results &&
-        searchResults.search_results.length > 0
-      ) {
-        // Dodaj iz search results (exclude main product)
+      if (searchResults.search_results?.length > 0) {
+        const remaining = limit - competitors.length;
+
         const fromSearch = searchResults.search_results
           .filter((item: any) => item.asin !== mainProduct.asin)
-          .slice(0, 10 - competitors.length);
+          .slice(0, remaining)
+          .map((item: any) => ({
+            asin: item.asin,
+            title: item.title,
+            price: item.price?.value || 0,
+            currency: item.price?.currency || "USD",
+            rating: item.rating || 0,
+            ratingsTotal: item.ratings_total || 0,
+            imageUrl: item.image,
+            link: item.link,
+            brand: item.brand,
+            source: "category_search",
+          }));
 
         competitors.push(...fromSearch);
-        console.log(
-          `[FETCH] Added ${fromSearch.length} competitors from category search`
-        );
       }
     } catch (error) {
-      console.error("Error searching for competitors:", error);
+      console.error("[RELATED] Category search failed:", error);
     }
   }
+
+  // Calculate match scores
+  const mainPrice = mainProduct.buybox_winner?.price?.value || 0;
+  const mainRating = mainProduct.rating || 0;
 
   const scoredCompetitors = competitors.map((comp) => {
     let score = 50;
 
-    const mainPrice = mainProduct.buybox_winner?.price?.value || 0;
-    const compPrice = comp.price?.value || 0;
+    if (comp.source === "similar_to_consider") score += 40;
+    if (comp.source === "also_viewed") score += 30;
+    if (comp.source === "also_bought") score += 25;
+    if (comp.source === "frequently_bought_together") score += 20;
+    if (comp.source === "category_search") score += 10;
 
-    if (mainPrice > 0 && compPrice > 0) {
-      const priceDiff = Math.abs(mainPrice - compPrice);
-      const priceScore = Math.max(0, 25 - (priceDiff / mainPrice) * 100);
+    if (mainPrice > 0 && comp.price > 0) {
+      const priceDiff = Math.abs(mainPrice - comp.price);
+      const priceScore = Math.max(0, 25 - (priceDiff / mainPrice) * 50);
       score += priceScore;
     }
 
-    const mainRating = mainProduct.rating || 0;
-    const compRating = comp.rating || 0;
-
-    if (mainRating > 0 && compRating > 0) {
-      const ratingDiff = Math.abs(mainRating - compRating);
+    if (mainRating > 0 && comp.rating > 0) {
+      const ratingDiff = Math.abs(mainRating - comp.rating);
       const ratingScore = Math.max(0, 15 - ratingDiff * 15);
       score += ratingScore;
     }
@@ -345,40 +426,53 @@ async function findCompetitorsOptimized(
       score += 10;
     }
 
-    return {
-      asin: comp.asin,
-      title: comp.title,
-      price: compPrice,
-      currency: comp.price?.currency || "USD",
-      rating: compRating,
-      ratingsTotal: comp.ratings_total || 0,
-      imageUrl: comp.image,
-      link: comp.link,
-      brand: comp.brand,
-      score: Math.round(score),
-    };
+    return { ...comp, score: Math.round(score) };
   });
 
-  return scoredCompetitors.sort((a, b) => b.score - a.score).slice(0, 10);
+  const finalCompetitors = scoredCompetitors.sort((a, b) => b.score - a.score);
+
+  console.log(`[RELATED] Returning ${finalCompetitors.length} competitors`);
+  console.log(`[RELATED] Sources:`, {
+    similar_to_consider: finalCompetitors.filter(
+      (c) => c.source === "similar_to_consider"
+    ).length,
+    also_viewed: finalCompetitors.filter((c) => c.source === "also_viewed")
+      .length,
+    also_bought: finalCompetitors.filter((c) => c.source === "also_bought")
+      .length,
+    frequently_bought_together: finalCompetitors.filter(
+      (c) => c.source === "frequently_bought_together"
+    ).length,
+    category_search: finalCompetitors.filter(
+      (c) => c.source === "category_search"
+    ).length,
+  });
+
+  return finalCompetitors;
 }
 
 // Main API Route
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { asin, marketplace = "com", folderId } = body;
+    const {
+      asin,
+      marketplace = "com",
+      folderId,
+      skipRelatedProducts = false,
+    } = body; // ← DODAJ skipRelatedProducts
 
     if (!asin || !folderId) {
       return NextResponse.json(
-        { error: "ASIN and Folder ID are required" },
+        { error: "ASIN and Folder ID required" },
         { status: 400 }
       );
     }
 
-    console.log(`[FETCH] ASIN: ${asin}, Folder: ${folderId}`);
+    console.log(`[FETCH] START: ${asin} in folder ${folderId}`);
     const startTime = Date.now();
 
-    // 1. Proveri folder
+    // 1. Check folder
     const [folder] = await db
       .select()
       .from(folders)
@@ -389,20 +483,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
 
-    // 2. Fetch product sa Rainforest
+    // 2. Fetch product from Rainforest
+    console.log(`[FETCH] Fetching from Rainforest API...`);
     const productData = await fetchFromRainforest({
       type: "product",
       amazon_domain: `amazon.${marketplace}`,
-      asin: asin,
+      asin,
+      similar_to_consider: "true",
+      also_viewed: "true",
+      also_bought: "true",
+      frequently_bought_together: "true",
     });
 
     if (!productData.product) {
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    console.log(`[FETCH] Product data received (${Date.now() - startTime}ms)`);
+    console.log(
+      `[FETCH] Product received with related items (${
+        Date.now() - startTime
+      }ms)`
+    );
 
-    // 3. Kreiraj ili učitaj comparison
+    // 3. Create or update comparison
     let comparison;
     const [existingComparison] = await db
       .select()
@@ -416,6 +519,7 @@ export async function POST(request: NextRequest) {
         .set({
           primaryAsin: asin,
           marketplace: marketplace as any,
+          name: `${productData.product.title.substring(0, 40)}... Analysis`,
           updatedAt: new Date(),
         })
         .where(eq(comparisons.id, existingComparison.id))
@@ -424,10 +528,10 @@ export async function POST(request: NextRequest) {
       [comparison] = await db
         .insert(comparisons)
         .values({
-          folderId: folderId,
+          folderId,
           primaryProductType: "competitor",
           primaryAsin: asin,
-          name: folder.name, // KORISTI IME FOLDERA, ne menjaj ga
+          name: `${productData.product.title.substring(0, 40)}... Analysis`,
           marketplace: marketplace as any,
           status: "draft",
           createdBy: "system",
@@ -435,90 +539,68 @@ export async function POST(request: NextRequest) {
         .returning();
     }
 
-    // 4. Spremi GLAVNI PROIZVOD sa isMyProduct = TRUE
-    const savedProduct = await saveProductToDatabase(
+    // 4. Save MY PRODUCT with FULL data
+    const savedProduct = await saveFullProductToDatabase(
       productData.product,
       marketplace,
-      true, // ← MY PRODUCT = TRUE
+      true,
       comparison.id
     );
 
-    console.log(`[FETCH] My Product saved: ${savedProduct.asin}`);
+    console.log(`[FETCH] My Product saved (${Date.now() - startTime}ms)`);
 
-    // 5. Pronađi konkurente
-    const competitors = await findCompetitorsOptimized(productData.product);
-    console.log(`[FETCH] Found ${competitors.length} competitors`);
+    // 5. Get REAL related products (only if NOT from search flow)
+    let competitors: any[] = [];
+    let stats: any = {
+      competitorsFound: 0,
+      processingTime: `${Date.now() - startTime}ms`,
+      primarySource: "none",
+      sources: {},
+    };
 
-    // 6. Spremi konkurente sa isMyProduct = FALSE
-    const savedCompetitors = [];
+    if (!skipRelatedProducts) {
+      // ← SAMO AKO NIJE SEARCH FLOW
+      competitors = await getRealRelatedProducts(productData, marketplace, 10);
 
-    for (const competitor of competitors) {
-      try {
-        // Proveri da li već postoji
-        const existingProducts = await db
-          .select()
-          .from(amazonProducts)
-          .where(
-            and(
-              eq(amazonProducts.asin, competitor.asin),
-              eq(amazonProducts.isMyProduct, false)
-            )
-          )
-          .limit(1);
+      console.log(
+        `[RELATED] Found ${competitors.length} related products (${
+          Date.now() - startTime
+        }ms)`
+      );
 
-        if (existingProducts.length === 0) {
-          // Spremi sa isMyProduct = FALSE
-          const saved = await db
-            .insert(amazonProducts)
-            .values({
-              asin: competitor.asin,
-              marketplace: marketplace as any,
-              title: competitor.title,
-              brand: competitor.brand || null,
-              link: competitor.link,
-              price: competitor.price?.toString() || null,
-              currency: competitor.currency,
-              rating: competitor.rating?.toString() || null,
-              ratingsTotal: competitor.ratingsTotal,
-              mainImageUrl: competitor.imageUrl,
-              imageUrls: competitor.imageUrl ? [competitor.imageUrl] : [],
-              isMyProduct: false, // ← COMPETITOR = FALSE
-              comparisonId: comparison.id,
-              lastFetchedAt: new Date(),
-              fetchCount: 1,
-              needsRefresh: true, // Može se fetchovati kasnije za full data
-            })
-            .returning();
+      // Clear old competitors
+      await db
+        .delete(comparisonCompetitors)
+        .where(eq(comparisonCompetitors.comparisonId, comparison.id));
 
-          savedCompetitors.push(saved[0]);
-        }
-      } catch (error) {
-        console.error(`Error saving competitor ${competitor.asin}:`, error);
-      }
-    }
-
-    // 7. Dodaj konkurente u comparisonCompetitors tabelu
-    await db
-      .delete(comparisonCompetitors)
-      .where(eq(comparisonCompetitors.comparisonId, comparison.id));
-
-    if (competitors.length > 0) {
-      const competitorRecords = competitors.map((comp, index) => ({
-        comparisonId: comparison.id,
-        asin: comp.asin,
-        position: index,
-        isVisible: true,
-        matchScore: comp.score?.toString() || null,
-        addedBy: "system",
-      }));
-
-      await db.insert(comparisonCompetitors).values(competitorRecords);
+      stats = {
+        competitorsFound: competitors.length,
+        processingTime: `${Date.now() - startTime}ms`,
+        primarySource: competitors[0]?.source || "none",
+        sources: {
+          similar_to_consider: competitors.filter(
+            (c) => c.source === "similar_to_consider"
+          ).length,
+          also_viewed: competitors.filter((c) => c.source === "also_viewed")
+            .length,
+          also_bought: competitors.filter((c) => c.source === "also_bought")
+            .length,
+          frequently_bought_together: competitors.filter(
+            (c) => c.source === "frequently_bought_together"
+          ).length,
+          category_search: competitors.filter(
+            (c) => c.source === "category_search"
+          ).length,
+        },
+      };
+    } else {
+      console.log(`[FETCH] Skipping related products (search flow)`);
     }
 
     const totalTime = Date.now() - startTime;
-    console.log(`[FETCH] Complete in ${totalTime}ms`);
+    console.log(`[FETCH] COMPLETE in ${totalTime}ms`);
 
-    // 8. Return response
+    // 7. Return response
     return NextResponse.json({
       success: true,
       product: {
@@ -532,24 +614,17 @@ export async function POST(request: NextRequest) {
         brand: savedProduct.brand,
         link: savedProduct.link,
         comparisonId: comparison.id,
-
-        // SVE DODATNE PODATKE
         features: savedProduct.featureBullets,
         specifications: savedProduct.specifications,
-        description: savedProduct.description,
         isPrime: savedProduct.isPrime,
         inStock: savedProduct.isInStock,
         bestsellerRank: savedProduct.bestsellerRank,
-        hasCoupon: savedProduct.hasCoupon,
-        savingsAmount: savedProduct.savingsAmount,
       },
-      suggestedCompetitors: competitors,
-      stats: {
-        competitorsFound: competitors.length,
-        processingTime: `${totalTime}ms`,
-        apiCallsMade: 1,
-      },
-      message: `Product saved as "My Product" with ${competitors.length} competitors`,
+      suggestedCompetitors: competitors, // Prazno ako je search flow
+      stats,
+      message: skipRelatedProducts
+        ? `Product fetched successfully`
+        : `Found ${competitors.length} related products`,
     });
   } catch (error: any) {
     console.error("[FETCH Error]", error);

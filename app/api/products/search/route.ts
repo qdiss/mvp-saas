@@ -63,51 +63,24 @@ async function saveProductToDatabase(productData: any, marketplace: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      keyword,
-      marketplace = "com",
-      comparisonId,
-      folderId,
-      filters = {},
-      maxResults = 20,
-    } = body;
+    const { query, marketplace = "com", maxResults = 20 } = body;
 
-    if (!keyword) {
+    if (!query) {
       return NextResponse.json(
-        { error: "Keyword is required" },
+        { error: "Search query is required" },
         { status: 400 }
       );
     }
 
-    console.log(`[SEARCH] Keyword: "${keyword}", Marketplace: ${marketplace}`);
-
-    // Build Rainforest search params
-    const searchParams: any = {
-      type: "search",
-      amazon_domain: `amazon.${marketplace}`,
-      search_term: keyword,
-      max_page: Math.ceil(maxResults / 48), // Rainforest returns ~48 per page
-    };
-
-    // Apply filters
-    if (filters.minPrice) {
-      searchParams.min_price = filters.minPrice;
-    }
-    if (filters.maxPrice) {
-      searchParams.max_price = filters.maxPrice;
-    }
-    if (filters.minRating) {
-      searchParams.customer_review = filters.minRating; // 4 stars & up
-    }
-    if (filters.primeOnly) {
-      searchParams.prime_eligible = "1";
-    }
-    if (filters.sortBy) {
-      searchParams.sort_by = filters.sortBy; // "price_low_to_high", "price_high_to_low", "most_reviewed"
-    }
+    console.log(`[SEARCH] Query: "${query}", Marketplace: ${marketplace}`);
 
     // Execute search
-    const searchResults = await fetchFromRainforest("search", searchParams);
+    const searchResults = await fetchFromRainforest("search", {
+      type: "search",
+      amazon_domain: `amazon.${marketplace}`,
+      search_term: query,
+      max_page: 1,
+    });
 
     if (
       !searchResults.search_results ||
@@ -121,100 +94,34 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const products = searchResults.search_results.slice(0, maxResults);
-
-    console.log(`[SEARCH] Found ${products.length} products`);
-
-    // Calculate aggregated stats
-    const prices = products
-      .map((p: any) => p.price?.value)
-      .filter((p: number) => p != null);
-
-    const ratings = products
-      .map((p: any) => p.rating)
-      .filter((r: number) => r != null);
-
-    const stats = {
-      totalResults: products.length,
-      avgPrice:
-        prices.length > 0
-          ? (
-              prices.reduce((a: number, b: number) => a + b, 0) / prices.length
-            ).toFixed(2)
-          : null,
-      minPrice: prices.length > 0 ? Math.min(...prices) : null,
-      maxPrice: prices.length > 0 ? Math.max(...prices) : null,
-      avgRating:
-        ratings.length > 0
-          ? (
-              ratings.reduce((a: number, b: number) => a + b, 0) /
-              ratings.length
-            ).toFixed(2)
-          : null,
-      primeCount: products.filter((p: any) => p.is_prime).length,
-    };
-
-    // Save products to database in background
-    const savedAsins: string[] = [];
-
-    for (const product of products) {
-      try {
-        const saved = await saveProductToDatabase(product, marketplace);
-        savedAsins.push(saved.asin);
-      } catch (error) {
-        console.error(`Error saving product ${product.asin}:`, error);
-      }
-    }
-
-    // Save search record
-    if (comparisonId || folderId) {
-      await db.insert(keywordSearches).values({
-        comparisonId: comparisonId || null,
-        folderId: folderId || null,
-        keyword,
-        marketplace: marketplace as any,
-        filters,
-        totalResults: products.length,
-        avgRating: stats.avgRating?.toString() || null,
-        avgPrice: stats.avgPrice?.toString() || null,
-        priceRange: {
-          min: stats.minPrice,
-          max: stats.maxPrice,
-        },
-        topAsins: savedAsins.slice(0, 20),
-        searchedBy: "system", // Replace with actual user ID
-      });
-    }
-
-    // Return results
-    return NextResponse.json({
-      success: true,
-      results: products.map((p: any) => ({
+    const products = searchResults.search_results
+      .slice(0, maxResults)
+      .map((p: any) => ({
         asin: p.asin,
         title: p.title,
         brand: p.brand,
-        price: p.price?.value,
-        currency: p.price?.currency,
-        rating: p.rating,
-        ratingsTotal: p.ratings_total,
+        price: p.price?.value || 0,
+        currency: p.price?.currency || "USD",
+        rating: p.rating || 0,
+        ratingsTotal: p.ratings_total || 0,
         imageUrl: p.image,
         link: p.link,
         isPrime: p.is_prime || false,
-        bestsellerRank: p.bestsellers_rank?.[0]?.rank,
-        category: p.categories?.[0]?.name,
-      })),
-      stats,
-      savedAsins,
-      message: `Found ${products.length} products for "${keyword}"`,
+        source: "search",
+      }));
+
+    console.log(`[SEARCH] Found ${products.length} products`);
+
+    return NextResponse.json({
+      success: true,
+      results: products,
+      totalResults: products.length,
+      message: `Found ${products.length} products for "${query}"`,
     });
   } catch (error: any) {
     console.error("[SEARCH Error]", error);
-
     return NextResponse.json(
-      {
-        error: "Search failed",
-        details: error.message,
-      },
+      { error: "Search failed", details: error.message },
       { status: 500 }
     );
   }

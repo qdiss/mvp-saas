@@ -1,121 +1,150 @@
-"use client"
-
-import { useSortable } from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { Sparkles, MessageCircle } from "lucide-react"
+// components/SortableImage.tsx
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { MessageCircle, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 type SortableImageProps = {
-    id: string
-    src: string
-    isMyProduct: boolean
-    isNew?: boolean
-    isSelected?: boolean
-    commentCount?: number
-    onSelect?: () => void
-    onOpenReview: (id: string) => void
-}
+  id: string;
+  src: string;
+  isMyProduct: boolean;
+  isNew?: boolean;
+  isSelected?: boolean;
+  commentCount?: number;
+  onSelect?: () => void;
+  onOpenReview?: () => void;
+  onError?: () => void;
+  onLoad?: () => void;
+};
 
-export function SortableImage({ 
-    id, 
-    src, 
-    isMyProduct, 
-    isNew = false,
-    isSelected = false,
-    commentCount = 0,
-    onSelect,
-    onOpenReview 
+export function SortableImage({
+  id,
+  src,
+  isMyProduct,
+  isNew,
+  isSelected,
+  commentCount = 0,
+  onSelect,
+  onOpenReview,
+  onError,
+  onLoad,
 }: SortableImageProps) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-    
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        zIndex: isDragging ? 999 : 'auto',
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const [imageError, setImageError] = useState(false);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleError = () => {
+    setImageError(true);
+    onError?.();
+  };
+
+  const handleLoad = () => {
+    setImageError(false);
+    onLoad?.();
+  };
+
+  // Handle click for selection (separate from drag)
+  const handleClick = (e: React.MouseEvent) => {
+    // Only handle selection if not dragging
+    if (!isDragging && onSelect) {
+      e.stopPropagation();
+      onSelect();
     }
+  };
 
-    // Border colors based on state
-    let borderColor = 'border-slate-200'
-    let hoverBorderColor = 'hover:border-slate-300'
-    let bgGradient = ''
-    
-    if (isSelected) {
-        borderColor = 'border-blue-400 ring-2 ring-blue-300'
-        hoverBorderColor = 'hover:border-blue-500'
-    } else if (isNew && isMyProduct) {
-        borderColor = 'border-emerald-400'
-        hoverBorderColor = 'hover:border-emerald-500'
-        bgGradient = 'bg-gradient-to-br from-emerald-100/60 to-emerald-200/40'
-    } else if (isMyProduct) {
-        borderColor = 'border-emerald-300'
-        hoverBorderColor = 'hover:border-emerald-400'
-    }
-
-    return (
-        <div 
-            ref={setNodeRef} 
-            style={style} 
-            {...attributes} 
-            {...listeners} 
-            className="relative group cursor-move"
-            onClick={(e) => {
-                // Allow selection when clicking on the image (not dragging)
-                if (!isDragging && onSelect) {
-                    e.stopPropagation()
-                    onSelect()
-                }
-            }}
-        >
-            {/* New Badge */}
-            {isNew && isMyProduct && (
-                <div className="absolute -top-2 -right-2 z-10 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-lg flex items-center gap-0.5 animate-pulse">
-                    <Sparkles className="h-2.5 w-2.5" />
-                    NEW
-                </div>
-            )}
-
-            {/* Comment Count Badge */}
-            {commentCount > 0 && (
-                <div className={`absolute -top-2 -left-2 z-10 ${
-                    isSelected ? 'bg-blue-500' : 'bg-slate-600'
-                } text-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-lg flex items-center gap-1`}>
-                    <MessageCircle className="h-2.5 w-2.5" />
-                    {commentCount}
-                </div>
-            )}
-
-            {/* Selected Checkmark */}
-            {isSelected && (
-                <div className="absolute top-1 right-1 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-lg">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                </div>
-            )}
-
-            <div className={`aspect-square rounded-lg overflow-hidden border-2 ${borderColor} ${hoverBorderColor} ${bgGradient} transition-all`}>
-                <img src={src} alt={id} className="w-full h-full object-cover" />
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <div
+        onClick={handleClick}
+        className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+          isDragging ? "cursor-grabbing" : "cursor-pointer"
+        } ${
+          isSelected
+            ? "border-blue-500 ring-2 ring-blue-200"
+            : isMyProduct
+            ? "border-emerald-200 hover:border-emerald-300"
+            : "border-slate-200 hover:border-slate-300"
+        }`}
+      >
+        {imageError ? (
+          <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400">
+            <div className="text-center">
+              <span className="text-2xl">📷</span>
+              <p className="text-xs mt-1">Image not available</p>
             </div>
+          </div>
+        ) : (
+          <img
+            src={src}
+            alt="Product"
+            className="w-full h-full object-cover"
+            onError={handleError}
+            onLoad={handleLoad}
+            loading="lazy"
+          />
+        )}
 
-            {/* Hover Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-black/10 rounded-lg">
-                <div className="flex flex-col gap-1.5 pointer-events-auto">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            if (onSelect) onSelect()
-                        }}
-                        className={`${
-                            isSelected
-                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                : isMyProduct 
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white' 
-                                    : '  hover:bg-slate-50   '
-                        } px-3 py-1.5 rounded-lg shadow-lg text-xs font-medium transition-colors`}
-                    >
-                        {isSelected ? '✓ Selected' : 'Select'}
-                    </button>
-                </div>
+        {/* Badges */}
+        <div className="absolute top-2 left-2 flex gap-1 pointer-events-none">
+          {isNew && (
+            <div className="px-2 py-0.5 bg-blue-500 text-white rounded-full text-xs font-medium flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              New
             </div>
+          )}
+          {commentCount > 0 && (
+            <div className="px-2 py-0.5 bg-slate-900/80 text-white rounded-full text-xs font-medium flex items-center gap-1">
+              <MessageCircle className="h-3 w-3" />
+              {commentCount}
+            </div>
+          )}
         </div>
-    )
+
+        {/* Selection Overlay */}
+        {isSelected && (
+          <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center pointer-events-none">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold">
+              ✓
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Drag Handle - shows on hover */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-1 right-1 w-6 h-6 bg-white/90 rounded border border-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing flex items-center justify-center"
+        title="Drag to reorder"
+      >
+        <svg
+          className="w-3 h-3 text-slate-600"
+          fill="currentColor"
+          viewBox="0 0 20 20"
+        >
+          <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM11.5 15.5a1.5 1.5 0 10-3 0 1.5 1.5 0 003 0z" />
+        </svg>
+      </div>
+
+      {/* Selection indicator */}
+      {isSelected && (
+        <div className="absolute bottom-1 right-1 px-2 py-0.5 bg-blue-500 text-white rounded text-xs font-medium pointer-events-none">
+          Selected
+        </div>
+      )}
+    </div>
+  );
 }
