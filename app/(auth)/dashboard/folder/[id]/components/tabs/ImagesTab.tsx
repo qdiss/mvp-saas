@@ -348,7 +348,7 @@ export function ImagesTab({
           onClose={() => setFullscreenImage(null)}
           comments={comments.filter((c) =>
             c.images.includes(getPhotoUrl(fullscreenImage))
-          )} // ✅ NOVA LOGIKA
+          )}
         />
       )}
     </>
@@ -465,7 +465,7 @@ function ProductColumn({
               const meta = photoMetadata[photoId];
 
               return (
-                <div key={photoId} className="relative">
+                <div key={photoId} className="relative aspect-square">
                   <SortableImage
                     id={photoId}
                     src={getPhotoUrl(photoId)}

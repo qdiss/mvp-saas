@@ -71,6 +71,13 @@
       "when": 1765729203199,
       "tag": "0009_early_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1767954885058,
+      "tag": "0010_material_jean_grey",
+      "breakpoints": true
     }
   ]
 }

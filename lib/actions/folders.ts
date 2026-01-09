@@ -7,14 +7,14 @@ import {
   userProducts,
   comparisons,
 } from "@/database/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 export interface CreateFolderInput {
   name: string;
   description?: string;
   category: string;
-  color?: string; // NOVO
+  color?: string;
   icon?: string;
 }
 
@@ -22,6 +22,8 @@ export interface UpdateFolderInput {
   name?: string;
   description?: string;
   category?: string;
+  color?: string;
+  icon?: string;
 }
 
 // Ensure user profile exists
@@ -32,7 +34,6 @@ export async function ensureUserProfile(
   imageUrl?: string | null
 ) {
   try {
-    // Check if profile exists
     const existing = await db.query.profiles.findFirst({
       where: eq(profiles.id, userId),
     });
@@ -61,10 +62,8 @@ export async function createFolder(
   userImageUrl?: string | null
 ) {
   try {
-    // Ensure profile exists
     await ensureUserProfile(userId, userEmail, userFullName, userImageUrl);
 
-    // Create folder
     const [folder] = await db
       .insert(folders)
       .values({
@@ -72,8 +71,8 @@ export async function createFolder(
         name: data.name,
         description: data.description || null,
         category: data.category,
-        color: data.color || "#10b981", // NOVO
-        icon: data.icon || "Folder", // NOVO
+        color: data.color || "#10b981",
+        icon: data.icon || "Folder",
         createdBy: userId,
       })
       .returning();
@@ -89,33 +88,106 @@ export async function createFolder(
   }
 }
 
-// Get folder stats
+// ⚡ OPTIMIZED: Get folders with stats and creator info in ONE query
+// This replaces getFolders + individual getFolderStats + getUserProfile calls
+export async function getFoldersWithStats(orgId: string) {
+  try {
+    // Single optimized query with joins
+    const foldersWithStats = await db
+      .select({
+        id: folders.id,
+        organizationId: folders.organizationId,
+        name: folders.name,
+        description: folders.description,
+        category: folders.category,
+        createdBy: folders.createdBy,
+        createdAt: folders.createdAt,
+        updatedAt: folders.updatedAt,
+        color: folders.color,
+        icon: folders.icon,
+        creatorName: profiles.fullName,
+        creatorEmail: profiles.email,
+        productCount: sql<number>`cast(count(distinct ${userProducts.id}) as int)`,
+        comparisonCount: sql<number>`cast(count(distinct ${comparisons.id}) as int)`,
+      })
+      .from(folders)
+      .leftJoin(profiles, eq(folders.createdBy, profiles.id))
+      .leftJoin(userProducts, eq(folders.id, userProducts.folderId))
+      .leftJoin(comparisons, eq(folders.id, comparisons.folderId))
+      .where(eq(folders.organizationId, orgId))
+      .groupBy(
+        folders.id,
+        folders.organizationId,
+        folders.name,
+        folders.description,
+        folders.category,
+        folders.createdBy,
+        folders.createdAt,
+        folders.updatedAt,
+        folders.color,
+        folders.icon,
+        profiles.fullName,
+        profiles.email
+      )
+      .orderBy(sql`${folders.createdAt} desc`);
+
+    // Transform to match expected format
+    const transformedFolders = foldersWithStats.map((folder) => ({
+      ...folder,
+      stats: {
+        products: folder.productCount,
+        comments: folder.comparisonCount,
+      },
+      creatorName: folder.creatorName || "Unknown User",
+    }));
+
+    return { success: true, data: transformedFolders };
+  } catch (error) {
+    console.error("Error fetching folders with stats:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch folders",
+      data: [],
+    };
+  }
+}
+
+// Keep original for backward compatibility (but prefer getFoldersWithStats)
+export async function getFolders(orgId: string) {
+  try {
+    const folderList = await db.query.folders.findMany({
+      where: eq(folders.organizationId, orgId),
+      orderBy: (folders, { desc }) => [desc(folders.createdAt)],
+    });
+
+    return { success: true, data: folderList };
+  } catch (error) {
+    console.error("Error fetching folders:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch folders",
+      data: [],
+    };
+  }
+}
+
+// Get single folder stats (if needed separately)
 export async function getFolderStats(folderId: string) {
   try {
-    // Count products in folder
-    const products = await db.query.userProducts.findMany({
-      where: eq(userProducts.folderId, folderId),
-    });
-
-    // Count comparison messages (comments) for all comparisons in folder
-    const folderComparisons = await db.query.comparisons.findMany({
-      where: eq(comparisons.folderId, folderId),
-    });
-
-    let totalComments = 0;
-    // for (const comparison of folderComparisons) {
-    //   const messages = await db.query.comparisonMessages.findMany({
-    //     where: eq(comparisonMessages.comparisonId, comparison.id),
-    //   });
-    //   totalComments += messages.length;
-    // }
+    const [stats] = await db
+      .select({
+        products: sql<number>`cast(count(distinct ${userProducts.id}) as int)`,
+        comments: sql<number>`cast(count(distinct ${comparisons.id}) as int)`,
+      })
+      .from(folders)
+      .leftJoin(userProducts, eq(folders.id, userProducts.folderId))
+      .leftJoin(comparisons, eq(folders.id, comparisons.folderId))
+      .where(eq(folders.id, folderId))
+      .groupBy(folders.id);
 
     return {
       success: true,
-      data: {
-        products: products.length,
-        comments: totalComments,
-      },
+      data: stats || { products: 0, comments: 0 },
     };
   } catch (error) {
     console.error("Error fetching folder stats:", error);
@@ -127,7 +199,7 @@ export async function getFolderStats(folderId: string) {
   }
 }
 
-// Get user profile
+// Get user profile (cached)
 export async function getUserProfile(userId: string) {
   try {
     const profile = await db.query.profiles.findFirst({
@@ -148,25 +220,6 @@ export async function getUserProfile(userId: string) {
     return {
       success: false,
       data: { fullName: "Unknown User", email: "", imageUrl: null },
-    };
-  }
-}
-
-// Get folders for organization
-export async function getFolders(orgId: string) {
-  try {
-    const folderList = await db.query.folders.findMany({
-      where: eq(folders.organizationId, orgId),
-      orderBy: (folders, { desc }) => [desc(folders.createdAt)],
-    });
-
-    return { success: true, data: folderList };
-  } catch (error) {
-    console.error("Error fetching folders:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Failed to fetch folders",
-      data: [],
     };
   }
 }
