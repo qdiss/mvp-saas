@@ -1,5 +1,5 @@
 // app/folders/[id]/page.tsx
-// SIMPLIFIED: Removed pending cache, fixed image mapping
+// FIXED: Added handleProductDeleted + proper type handling
 
 "use client";
 
@@ -11,9 +11,12 @@ import { StatsCards } from "./components/StatsCards";
 import { TabNavigation } from "./components/TabNavigation";
 import { OverviewTab } from "./components/tabs/OverviewTab";
 import { ImagesTab } from "./components/tabs/ImagesTab";
+import { VideoTab } from "./components/tabs/VideoTab";
 import { PricingTab } from "./components/tabs/PricingTab";
 import { ContentTab } from "./components/tabs/ContentTab";
+import { APlusContentTab } from "./components/tabs/APlusContentTab";
 import { AddProductFlow } from "./components/AddProductFlow";
+
 export default function CompetitiveAnalysisPage({
   params,
 }: {
@@ -39,7 +42,6 @@ export default function CompetitiveAnalysisPage({
   });
 
   const [comparisonId, setComparisonId] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
@@ -60,7 +62,6 @@ export default function CompetitiveAnalysisPage({
         if (data.comparison) {
           const { comparison } = data;
 
-          // ✅ Spremi comparisonId
           setComparisonId(comparison.id);
 
           // Set MY PRODUCT
@@ -73,10 +74,7 @@ export default function CompetitiveAnalysisPage({
               price: parseFloat(product.price || "0"),
               rating: parseFloat(product.rating || "0"),
               reviews: product.ratingsTotal || 0,
-
-              // FIX: Map images properly
               photos: product.images?.map((img: any) => img.imageUrl) || [],
-
               asin: product.asin,
               brand: product.brand,
               link: product.link,
@@ -88,6 +86,7 @@ export default function CompetitiveAnalysisPage({
               bestsellerRank: product.bestsellerRank,
               category: product.categoriesFlat,
               comparisonId: comparison.id,
+              rawData: product.rawData,
             });
           }
 
@@ -100,10 +99,7 @@ export default function CompetitiveAnalysisPage({
                 price: parseFloat(comp.price || "0"),
                 rating: parseFloat(comp.rating || "0"),
                 reviews: comp.ratingsTotal || 0,
-
-                // FIX: Map images properly
                 photos: comp.images?.map((img: any) => img.imageUrl) || [],
-
                 asin: comp.asin,
                 brand: comp.brand,
                 link: comp.link,
@@ -120,6 +116,7 @@ export default function CompetitiveAnalysisPage({
                 addedAt: comp.addedAt,
                 position: comp.position,
                 comparisonId: comparison.id,
+                rawData: comp.rawData,
               }))
             );
           }
@@ -158,6 +155,13 @@ export default function CompetitiveAnalysisPage({
 
   const updateCompetitor = (id: string, updater: (p: Product) => Product) => {
     setCompetitors((prev) => prev.map((p) => (p.id === id ? updater(p) : p)));
+  };
+
+  // ✅ FIXED: Added handleProductDeleted function
+  const handleProductDeleted = (productId: string) => {
+    console.log("Product deleted:", productId);
+    // Remove from competitors list
+    setCompetitors((prev) => prev.filter((c) => c.id !== productId));
   };
 
   const handleProductAdded = async (
@@ -217,7 +221,7 @@ export default function CompetitiveAnalysisPage({
 
           <div className="rounded-xl border border-slate-200 p-12 text-center">
             <div className="max-w-2xl mx-auto">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <div className="w-16 h-16 bg-linear-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
                 <Package className="h-8 w-8 text-white" />
               </div>
               <h2 className="text-xl font-semibold mb-2">
@@ -242,7 +246,7 @@ export default function CompetitiveAnalysisPage({
   // Main View
   return (
     <div className="min-h-screen w-full">
-      <div className=" mx-auto">
+      <div className="mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <button
             className="p-2 text-slate-600 hover:bg-white/60 rounded-lg"
@@ -272,6 +276,7 @@ export default function CompetitiveAnalysisPage({
               myProduct={myProduct}
               competitors={competitors}
               onToggleCompetitor={toggleCompetitor}
+              onProductDeleted={handleProductDeleted}
             />
           )}
 
@@ -281,7 +286,15 @@ export default function CompetitiveAnalysisPage({
               competitors={competitors}
               onUpdateProduct={setMyProduct}
               onUpdateCompetitor={updateCompetitor}
-              comparisonId={comparisonId || undefined} // ✅ Proslijedi comparisonId
+              comparisonId={comparisonId || undefined}
+            />
+          )}
+
+          {selectedTab === "videos" && (
+            <VideoTab
+              myProduct={myProduct}
+              competitors={competitors}
+              comparisonId={comparisonId || undefined}
             />
           )}
 
@@ -297,6 +310,10 @@ export default function CompetitiveAnalysisPage({
               myProduct={myProduct}
               competitors={selectedCompetitors}
             />
+          )}
+
+          {selectedTab === "aplus" && (
+            <APlusContentTab myProduct={myProduct} competitors={competitors} />
           )}
         </div>
       </div>

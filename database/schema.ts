@@ -563,6 +563,27 @@ export const imageComments = pgTable(
   })
 );
 
+export const videoComments = pgTable("video_comments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  comparisonId: uuid("comparison_id")
+    .notNull()
+    .references(() => comparisons.id, { onDelete: "cascade" }),
+
+  // Array of video URLs this comment is attached to
+  videoUrls: jsonb("video_urls").notNull().$type<string[]>(),
+
+  // Comment content
+  content: text("content").notNull(),
+
+  // Status
+  status: text("status").notNull().default("open"), // open | resolved | archived
+
+  // Metadata
+  createdBy: text("created_by").notNull().default("User"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ============================================
 // FEATURE COMMENTS
 // ============================================

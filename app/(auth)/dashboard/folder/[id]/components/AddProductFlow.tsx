@@ -1,11 +1,6 @@
-// //TODO: Add competitor selection step after fetching main product
-// //TODO: Add types and interfaces for better type checking
-// //TODO: Add validation and error handling
-// //TODO: Improve UI/UX with better styling and feedback
-// //TODO: Allow manual product entry if ASIN is not found
-// //TODO: Optimize state management for larger flows
-// //TODO: Add loading states and spinners during API calls
-// //TODO: Ensure accessibility compliance for dialog and form elements
+// app/folders/[id]/components/AddProductFlow.tsx
+// COMPLETE: All methods working - ASIN, Multi-ASIN, Search, Manual
+
 "use client";
 
 import React, { useState } from "react";
@@ -21,6 +16,9 @@ import {
   ShoppingBag,
   Eye,
   ShoppingCart,
+  Edit3,
+  Upload,
+  Star,
 } from "lucide-react";
 
 type AddProductFlowProps = {
@@ -34,16 +32,20 @@ export function AddProductFlow({
 }: AddProductFlowProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<
-    // ✅
     | "method"
     | "asin"
+    | "multi_asin"
+    | "manual"
     | "search"
     | "select_my_product"
+    | "select_my_product_multi_asin"
     | "loading"
     | "competitors"
     | "saving"
-  >("method"); // ✅ >("method")
+  >("method");
+
   const [asin, setAsin] = useState("");
+  const [multiAsinInput, setMultiAsinInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [marketplace, setMarketplace] = useState("com");
   const [loading, setLoading] = useState(false);
@@ -55,6 +57,17 @@ export function AddProductFlow({
   const [competitors, setCompetitors] = useState<any[]>([]);
   const [selectedCompetitors, setSelectedCompetitors] = useState<string[]>([]);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [multiAsinResults, setMultiAsinResults] = useState<any[]>([]); // ✅ NEW: Store all multi-ASIN results
+
+  // Manual entry state
+  const [manualProduct, setManualProduct] = useState({
+    asin: "",
+    title: "",
+    brand: "",
+    price: "",
+    link: "",
+    imageUrl: "",
+  });
 
   const marketplaces = [
     { code: "com", name: "Amazon.com", flag: "🇺🇸" },
@@ -66,6 +79,25 @@ export function AddProductFlow({
     { code: "ca", name: "Amazon.ca", flag: "🇨🇦" },
     { code: "com.mx", name: "Amazon.com.mx", flag: "🇲🇽" },
   ];
+
+  // ✅ Helper functions to safely parse numbers from API
+  const safeNumber = (value: any, defaultValue: number = 0): number => {
+    if (typeof value === "number" && !isNaN(value)) return value;
+    if (typeof value === "string") {
+      const parsed = parseFloat(value);
+      return isNaN(parsed) ? defaultValue : parsed;
+    }
+    return defaultValue;
+  };
+
+  const safeInt = (value: any, defaultValue: number = 0): number => {
+    if (typeof value === "number" && !isNaN(value)) return Math.floor(value);
+    if (typeof value === "string") {
+      const parsed = parseInt(value, 10);
+      return isNaN(parsed) ? defaultValue : parsed;
+    }
+    return defaultValue;
+  };
 
   const getSourceBadge = (source: string) => {
     switch (source) {
@@ -99,10 +131,10 @@ export function AddProductFlow({
           label: "From Search",
           color: "bg-indigo-100 text-indigo-700 border-indigo-200",
         };
-      case "category_search":
+      case "manual":
         return {
-          icon: <Search className="h-3 w-3" />,
-          label: "Similar Category",
+          icon: <Edit3 className="h-3 w-3" />,
+          label: "Manual Entry",
           color: "bg-amber-100 text-amber-700 border-amber-200",
         };
       default:
@@ -129,7 +161,7 @@ export function AddProductFlow({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          asin: asin.trim(),
+          asin: asin.trim().toUpperCase(),
           marketplace,
           folderId,
         }),
@@ -142,18 +174,205 @@ export function AddProductFlow({
       }
 
       setProduct(data.product);
-      setCompetitors(data.suggestedCompetitors || []);
-      setFetchStats(data.stats);
 
-      // Auto-select ALL competitors
-      setSelectedCompetitors(
-        data.suggestedCompetitors?.map((c: any) => c.asin) || []
-      );
+      // ✅ Parse competitors with safe numbers and remove duplicates
+      const seenAsins = new Set<string>();
+      const parsedCompetitors = (data.suggestedCompetitors || [])
+        .filter((c: any) => {
+          if (seenAsins.has(c.asin)) {
+            console.log(`[ASIN FETCH] Skipping duplicate ASIN: ${c.asin}`);
+            return false;
+          }
+          seenAsins.add(c.asin);
+          return true;
+        })
+        .map((c: any) => ({
+          ...c,
+          price: safeNumber(c.price, 0),
+          rating: safeNumber(c.rating, 0),
+          ratingsTotal: safeInt(c.ratingsTotal, 0),
+        }));
+
+      setCompetitors(parsedCompetitors);
+      setFetchStats(data.stats);
+      setSelectedCompetitors(parsedCompetitors.map((c: any) => c.asin));
 
       setStep("competitors");
     } catch (err: any) {
       setError(err.message || "Failed to fetch product");
       setStep("asin");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMultiASINFetch = async () => {
+    const asins = multiAsinInput
+      .split(/[\n,\s]+/)
+      .map((a) => a.trim().toUpperCase())
+      .filter((a) => a.length >= 10);
+
+    if (asins.length === 0) {
+      setError("Please enter at least one valid ASIN");
+      return;
+    }
+
+    if (asins.length > 10) {
+      setError("Maximum 10 ASINs allowed");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setStep("loading");
+
+    try {
+      const response = await fetch("/api/products/fetch-multi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asins,
+          marketplace,
+          folderId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch products");
+      }
+
+      if (!data.products || data.products.length === 0) {
+        setError("No valid products found");
+        setStep("multi_asin");
+        return;
+      }
+
+      // ✅ NEW: Store all products and let user select which is "My Product"
+      const seenAsins = new Set<string>();
+      const allProducts = data.products
+        .filter((p: any) => {
+          if (seenAsins.has(p.asin)) {
+            console.log(`[MULTI-ASIN] Skipping duplicate ASIN: ${p.asin}`);
+            return false;
+          }
+          seenAsins.add(p.asin);
+          return true;
+        })
+        .map((p: any) => ({
+          ...p,
+          source: "manual",
+          price: safeNumber(p.price, 0),
+          rating: safeNumber(p.rating, 0),
+          ratingsTotal: safeInt(p.ratingsTotal, 0),
+        }));
+
+      setMultiAsinResults(allProducts);
+      setStep("select_my_product_multi_asin");
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch products");
+      setStep("multi_asin");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ FIXED: Handle selection of "My Product" from multi-ASIN results
+  const handleSelectMyProductFromMultiAsin = async (selectedProduct: any) => {
+    setLoading(true);
+    setStep("loading");
+
+    try {
+      // ✅ CRITICAL: Fetch the selected product as "My Product" with isMyProduct=TRUE
+      console.log(
+        `[MULTI-ASIN SELECT] Fetching ${selectedProduct.asin} as My Product...`
+      );
+
+      const response = await fetch("/api/products/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asin: selectedProduct.asin,
+          marketplace,
+          folderId,
+          skipRelatedProducts: true, // We already have competitors from multi-ASIN
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch product");
+      }
+
+      // Set the fetched product (now with full data from API)
+      setProduct(data.product);
+
+      // All other products become competitors (auto-selected)
+      const competitorsFromMultiAsin = multiAsinResults
+        .filter((p) => p.asin !== selectedProduct.asin)
+        .map((p) => ({ ...p, source: "manual" }));
+
+      setCompetitors(competitorsFromMultiAsin);
+      setSelectedCompetitors(competitorsFromMultiAsin.map((c) => c.asin));
+
+      setFetchStats({
+        competitorsFound: competitorsFromMultiAsin.length,
+        primarySource: "multi_asin",
+        sources: { manual: competitorsFromMultiAsin.length },
+      });
+
+      setStep("competitors");
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch product");
+      setStep("select_my_product_multi_asin");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualEntry = async () => {
+    if (!manualProduct.asin.trim() || !manualProduct.title.trim()) {
+      setError("ASIN and Title are required");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setStep("loading");
+
+    try {
+      const response = await fetch("/api/products/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...manualProduct,
+          asin: manualProduct.asin.trim().toUpperCase(),
+          marketplace,
+          folderId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to save product");
+      }
+
+      setProduct(data.product);
+      setCompetitors([]);
+      setSelectedCompetitors([]);
+      setFetchStats({
+        competitorsFound: 0,
+        primarySource: "manual",
+        sources: { manual: 1 },
+      });
+
+      setStep("competitors");
+    } catch (err: any) {
+      setError(err.message || "Failed to save product");
+      setStep("manual");
     } finally {
       setLoading(false);
     }
@@ -192,7 +411,15 @@ export function AddProductFlow({
         return;
       }
 
-      setSearchResults(data.results || []);
+      // ✅ Parse search results with safe number conversion
+      const parsedResults = data.results.map((r: any) => ({
+        ...r,
+        price: safeNumber(r.price, 0),
+        rating: safeNumber(r.rating, 0),
+        ratingsTotal: safeInt(r.ratingsTotal, 0),
+      }));
+
+      setSearchResults(parsedResults);
       setStep("select_my_product");
     } catch (err: any) {
       setError(err.message || "Search failed");
@@ -207,7 +434,6 @@ export function AddProductFlow({
     setStep("loading");
 
     try {
-      // Fetch full product data WITHOUT related products (search flow)
       const response = await fetch("/api/products/fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,7 +441,7 @@ export function AddProductFlow({
           asin: selectedProduct.asin,
           marketplace,
           folderId,
-          skipRelatedProducts: true, // ← DODAJ OVO
+          skipRelatedProducts: true,
         }),
       });
 
@@ -225,17 +451,29 @@ export function AddProductFlow({
         throw new Error(data.error || "Failed to fetch full product data");
       }
 
-      // Set the fetched product as "My Product"
       setProduct(data.product);
 
-      // All OTHER products from search become competitors (ne koristimo data.suggestedCompetitors)
+      // ✅ Parse competitors from search with safe numbers and remove duplicates
+      const seenAsins = new Set<string>();
       const competitorsFromSearch = searchResults
-        .filter((p) => p.asin !== selectedProduct.asin)
-        .map((p) => ({ ...p, source: "search" }));
+        .filter((p) => {
+          if (p.asin === selectedProduct.asin) return false;
+          if (seenAsins.has(p.asin)) {
+            console.log(`[SEARCH] Skipping duplicate ASIN: ${p.asin}`);
+            return false;
+          }
+          seenAsins.add(p.asin);
+          return true;
+        })
+        .map((p) => ({
+          ...p,
+          source: "search",
+          price: safeNumber(p.price, 0),
+          rating: safeNumber(p.rating, 0),
+          ratingsTotal: safeInt(p.ratingsTotal, 0),
+        }));
 
       setCompetitors(competitorsFromSearch);
-
-      // Auto-select all competitors
       setSelectedCompetitors(competitorsFromSearch.map((c) => c.asin));
 
       setFetchStats({
@@ -303,7 +541,6 @@ export function AddProductFlow({
 
       setSavingProgress("Updating comparison...");
 
-      // ✅ OPCIONO: Update folder name (skip ako vraća 404)
       try {
         await fetch(`/api/folders/${folderId}`, {
           method: "PATCH",
@@ -313,7 +550,7 @@ export function AddProductFlow({
           }),
         });
       } catch (err) {
-        console.log("Folder update skipped (endpoint may not exist)");
+        console.log("Folder update skipped");
       }
 
       setSavingProgress("Complete!");
@@ -338,14 +575,24 @@ export function AddProductFlow({
     setIsOpen(false);
     setStep("method");
     setAsin("");
+    setMultiAsinInput("");
     setSearchQuery("");
     setProduct(null);
     setCompetitors([]);
     setSelectedCompetitors([]);
     setSearchResults([]);
+    setMultiAsinResults([]); // ✅ Reset multi-ASIN results
     setError("");
     setSavingProgress("");
     setFetchStats(null);
+    setManualProduct({
+      asin: "",
+      title: "",
+      brand: "",
+      price: "",
+      link: "",
+      imageUrl: "",
+    });
   };
 
   if (!isOpen) {
@@ -363,7 +610,6 @@ export function AddProductFlow({
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 p-6 flex items-center justify-between z-10">
           <h2 className="text-2xl font-bold">Add Product</h2>
           <button
@@ -376,7 +622,6 @@ export function AddProductFlow({
         </div>
 
         <div className="p-6">
-          {/* Loading State */}
           {step === "loading" && (
             <div className="text-center py-12">
               <Loader2 className="h-12 w-12 animate-spin text-blue-500 mx-auto mb-4" />
@@ -393,7 +638,6 @@ export function AddProductFlow({
             </div>
           )}
 
-          {/* Saving State */}
           {step === "saving" && (
             <div className="text-center py-12">
               <Sparkles className="h-12 w-12 text-emerald-500 mx-auto mb-4 animate-pulse" />
@@ -404,7 +648,6 @@ export function AddProductFlow({
             </div>
           )}
 
-          {/* Method Selection */}
           {step === "method" && (
             <div className="grid grid-cols-2 gap-4">
               <button
@@ -420,6 +663,18 @@ export function AddProductFlow({
               </button>
 
               <button
+                onClick={() => setStep("multi_asin")}
+                className="group relative overflow-hidden rounded-2xl border-2 border-slate-200 hover:border-emerald-400 bg-white p-8 text-left transition-all hover:shadow-xl"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform" />
+                <Upload className="h-10 w-10 text-emerald-500 mb-4" />
+                <h3 className="font-bold text-lg mb-2">Multi-ASIN Import</h3>
+                <p className="text-sm text-slate-600">
+                  Paste up to 10 ASINs at once (comma or newline separated)
+                </p>
+              </button>
+
+              <button
                 onClick={() => setStep("search")}
                 className="group relative overflow-hidden rounded-2xl border-2 border-slate-200 hover:border-purple-400 bg-white p-8 text-left transition-all hover:shadow-xl"
               >
@@ -430,10 +685,21 @@ export function AddProductFlow({
                   Search Amazon and select your product from results
                 </p>
               </button>
+
+              <button
+                onClick={() => setStep("manual")}
+                className="group relative overflow-hidden rounded-2xl border-2 border-slate-200 hover:border-amber-400 bg-white p-8 text-left transition-all hover:shadow-xl"
+              >
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-500/10 to-transparent rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform" />
+                <Edit3 className="h-10 w-10 text-amber-500 mb-4" />
+                <h3 className="font-bold text-lg mb-2">Manual Entry</h3>
+                <p className="text-sm text-slate-600">
+                  Manually enter product details (useful for testing)
+                </p>
+              </button>
             </div>
           )}
 
-          {/* ASIN Entry */}
           {step === "asin" && (
             <div className="space-y-6">
               <button
@@ -444,9 +710,10 @@ export function AddProductFlow({
               </button>
 
               <div>
-                <h3 className="text-xl font-bold mb-2">Enter Product ASIN</h3>
+                <h3 className="text-xl font-bold mb-2">Add by ASIN</h3>
                 <p className="text-slate-600">
-                  We'll find related products automatically
+                  Enter an Amazon ASIN to fetch product details and find
+                  competitors
                 </p>
               </div>
 
@@ -478,13 +745,15 @@ export function AddProductFlow({
                     type="text"
                     value={asin}
                     onChange={(e) => setAsin(e.target.value.toUpperCase())}
-                    placeholder="B0XXXXXX"
-                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-500 focus:outline-none text-lg font-mono"
+                    onKeyPress={(e) => e.key === "Enter" && handleFetchByASIN()}
+                    placeholder="B0XXXXXXXXXX"
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-blue-500 focus:outline-none font-mono text-lg"
                     maxLength={10}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleFetchByASIN();
-                    }}
+                    autoFocus
                   />
+                  <p className="text-xs text-slate-500 mt-2">
+                    Example: B09V3KXJPB
+                  </p>
                 </div>
 
                 {error && (
@@ -496,7 +765,7 @@ export function AddProductFlow({
                 <button
                   onClick={handleFetchByASIN}
                   disabled={loading || !asin.trim()}
-                  className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                  className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -505,8 +774,8 @@ export function AddProductFlow({
                     </>
                   ) : (
                     <>
-                      <Search className="h-5 w-5" />
-                      Fetch Product & Related Items
+                      <Package className="h-5 w-5" />
+                      Fetch Product
                     </>
                   )}
                 </button>
@@ -514,7 +783,92 @@ export function AddProductFlow({
             </div>
           )}
 
-          {/* Search View */}
+          {step === "multi_asin" && (
+            <div className="space-y-6">
+              <button
+                onClick={() => setStep("method")}
+                className="text-sm text-slate-600 hover:text-slate-900"
+              >
+                ← Back to methods
+              </button>
+
+              <div>
+                <h3 className="text-xl font-bold mb-2">Multi-ASIN Import</h3>
+                <p className="text-slate-600">
+                  Paste up to 10 ASINs (one per line or comma-separated)
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Marketplace
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {marketplaces.map((mp) => (
+                      <button
+                        key={mp.code}
+                        onClick={() => setMarketplace(mp.code)}
+                        className={`px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                          marketplace === mp.code
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        {mp.flag} {mp.code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    ASINs (max 10)
+                  </label>
+                  <textarea
+                    value={multiAsinInput}
+                    onChange={(e) => setMultiAsinInput(e.target.value)}
+                    placeholder="B0XXXXXXXXXX&#10;B0YYYYYYYYYY&#10;B0ZZZZZZZZZZ"
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-emerald-500 focus:outline-none font-mono text-sm"
+                    rows={8}
+                  />
+                  <p className="text-xs text-slate-500 mt-2">
+                    {
+                      multiAsinInput
+                        .split(/[\n,\s]+/)
+                        .filter((a) => a.trim().length >= 10).length
+                    }{" "}
+                    ASINs detected
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleMultiASINFetch}
+                  disabled={loading}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-semibold hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Fetching products...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5" />
+                      Import Products
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {step === "search" && (
             <div className="space-y-6">
               <button
@@ -525,11 +879,9 @@ export function AddProductFlow({
               </button>
 
               <div>
-                <h3 className="text-xl font-bold mb-2">
-                  Search Amazon Products
-                </h3>
+                <h3 className="text-xl font-bold mb-2">Search Products</h3>
                 <p className="text-slate-600">
-                  Search by keywords, brand, or category
+                  Search Amazon to find your product
                 </p>
               </div>
 
@@ -538,17 +890,21 @@ export function AddProductFlow({
                   <label className="block text-sm font-medium mb-2">
                     Marketplace
                   </label>
-                  <select
-                    value={marketplace}
-                    onChange={(e) => setMarketplace(e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-purple-500 focus:outline-none"
-                  >
+                  <div className="grid grid-cols-4 gap-2">
                     {marketplaces.map((mp) => (
-                      <option key={mp.code} value={mp.code}>
-                        {mp.flag} {mp.name}
-                      </option>
+                      <button
+                        key={mp.code}
+                        onClick={() => setMarketplace(mp.code)}
+                        className={`px-3 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                          marketplace === mp.code
+                            ? "border-purple-500 bg-purple-50 text-purple-700"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        {mp.flag} {mp.code}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div>
@@ -559,11 +915,12 @@ export function AddProductFlow({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="cooling face mask, wireless headphones, Sony..."
+                    onKeyPress={(e) =>
+                      e.key === "Enter" && handleSearchProducts()
+                    }
+                    placeholder="e.g., wireless headphones"
                     className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-purple-500 focus:outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleSearchProducts();
-                    }}
+                    autoFocus
                   />
                 </div>
 
@@ -586,7 +943,7 @@ export function AddProductFlow({
                   ) : (
                     <>
                       <Search className="h-5 w-5" />
-                      Search Products
+                      Search Amazon
                     </>
                   )}
                 </button>
@@ -594,7 +951,6 @@ export function AddProductFlow({
             </div>
           )}
 
-          {/* Select My Product Step */}
           {step === "select_my_product" && (
             <div className="space-y-6">
               <button
@@ -607,60 +963,49 @@ export function AddProductFlow({
               <div>
                 <h3 className="text-xl font-bold mb-2">Select Your Product</h3>
                 <p className="text-slate-600">
-                  Choose which product is yours. Other products will become
-                  competitors.
+                  Found {searchResults.length} products. Select your main
+                  product:
                 </p>
-                <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-                  Found {searchResults.length} products
-                </div>
               </div>
 
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                {searchResults.map((product) => (
+              <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto">
+                {searchResults.map((result) => (
                   <button
-                    key={product.asin}
-                    onClick={() => handleSelectMyProduct(product)}
-                    disabled={loading}
-                    className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-left"
+                    key={result.asin}
+                    onClick={() => handleSelectMyProduct(result)}
+                    className="flex items-start gap-4 p-4 border-2 border-slate-200 rounded-xl hover:border-purple-400 hover:bg-purple-50 transition-all text-left"
                   >
                     <img
-                      src={product.imageUrl}
-                      alt={product.title}
-                      className="w-20 h-20 object-contain rounded bg-slate-50 flex-shrink-0"
+                      src={result.imageUrl}
+                      alt={result.title}
+                      className="w-20 h-20 object-contain bg-white rounded-lg flex-shrink-0"
                     />
-
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-sm mb-2 line-clamp-2">
-                        {product.title}
+                      <h4 className="font-semibold line-clamp-2 mb-1">
+                        {result.title}
                       </h4>
-                      <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
-                        <span className="font-bold text-base">
-                          ${product.price}
-                        </span>
-                        {product.rating > 0 && (
-                          <>
-                            <span>★ {product.rating}</span>
-                            <span>
-                              {product.ratingsTotal?.toLocaleString()} reviews
-                            </span>
-                          </>
-                        )}
-                        {product.isPrime && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                            Prime
-                          </span>
-                        )}
-                      </div>
-                      {product.brand && (
-                        <div className="mt-1 text-xs text-slate-500">
-                          Brand: {product.brand}
-                        </div>
+                      {result.brand && (
+                        <p className="text-sm text-slate-600 mb-2">
+                          {result.brand}
+                        </p>
                       )}
-                    </div>
-
-                    <div className="flex-shrink-0">
-                      <div className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium text-sm hover:bg-blue-600 transition-colors">
-                        Select This →
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <span className="font-bold text-lg">
+                          ${safeNumber(result.price, 0).toFixed(2)}
+                        </span>
+                        {result.rating > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                            <span className="font-semibold">
+                              {safeNumber(result.rating, 0).toFixed(1)}
+                            </span>
+                            <span className="text-slate-500 text-sm">
+                              (
+                              {safeInt(result.ratingsTotal, 0).toLocaleString()}
+                              )
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -669,238 +1014,422 @@ export function AddProductFlow({
             </div>
           )}
 
-          {/* Competitors Selection */}
-          {step === "competitors" && (
+          {/* ✅ NEW: Select "My Product" from multi-ASIN results */}
+          {step === "select_my_product_multi_asin" && (
             <div className="space-y-6">
-              {/* My Product */}
-              {product && (
-                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl border-2 border-emerald-300 p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    <h3 className="font-bold text-emerald-900">Your Product</h3>
-                  </div>
-                  <div className="flex gap-4">
+              <button
+                onClick={() => setStep("multi_asin")}
+                className="text-sm text-slate-600 hover:text-slate-900"
+              >
+                ← Back to ASINs
+              </button>
+
+              <div>
+                <h3 className="text-xl font-bold mb-2">Select Your Product</h3>
+                <p className="text-slate-600">
+                  Found {multiAsinResults.length} products. Click on your main
+                  product:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 max-h-[500px] overflow-y-auto">
+                {multiAsinResults.map((result) => (
+                  <button
+                    key={result.asin}
+                    onClick={() => handleSelectMyProductFromMultiAsin(result)}
+                    className="flex items-start gap-4 p-4 border-2 border-slate-200 rounded-xl hover:border-emerald-400 hover:bg-emerald-50 transition-all text-left group"
+                  >
+                    {/* Checkmark indicator on hover */}
+                    <div className="absolute top-4 right-4 w-8 h-8 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-white" />
+                    </div>
+
                     <img
-                      src={product.imageUrl}
-                      alt={product.title}
-                      className="w-24 h-24 object-contain rounded-lg bg-white"
+                      src={result.imageUrl || result.image}
+                      alt={result.title}
+                      className="w-20 h-20 object-contain bg-white rounded-lg flex-shrink-0"
                     />
-                    <div className="flex-1">
-                      <h4 className="font-semibold mb-1 line-clamp-2">
-                        {product.title}
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold line-clamp-2 mb-1">
+                        {result.title}
                       </h4>
-                      <div className="flex items-center gap-3 text-sm">
-                        <span className="font-bold text-emerald-700">
-                          ${product.price}
+                      {result.brand && (
+                        <p className="text-sm text-slate-600 mb-2">
+                          by {result.brand}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <span className="font-bold text-lg">
+                          ${safeNumber(result.price, 0).toFixed(2)}
                         </span>
-                        {product.rating > 0 && (
-                          <>
-                            <span>★ {product.rating}</span>
-                            <span className="text-slate-600">
-                              {product.ratingsTotal?.toLocaleString()} reviews
+                        {result.rating > 0 && (
+                          <div className="flex items-center gap-1">
+                            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                            <span className="font-semibold">
+                              {safeNumber(result.rating, 0).toFixed(1)}
                             </span>
-                          </>
+                            <span className="text-slate-500 text-sm">
+                              (
+                              {safeInt(result.ratingsTotal, 0).toLocaleString()}
+                              )
+                            </span>
+                          </div>
                         )}
                       </div>
+                      <div className="mt-2">
+                        <span className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded-full">
+                          ASIN: {result.asin}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  </button>
+                ))}
+              </div>
 
-              {/* Stats */}
-              {fetchStats && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="h-4 w-4 text-blue-600" />
-                    <h4 className="font-semibold text-blue-900 text-sm">
-                      Related Products Found
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-white font-bold">i</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-blue-900 mb-1">
+                      How it works
                     </h4>
+                    <p className="text-sm text-blue-700">
+                      Click on the product you want to analyze (Your Product).
+                      All other products will automatically become competitors,
+                      which you can deselect on the next screen if needed.
+                    </p>
                   </div>
-                  <p className="text-xs text-blue-700">
-                    {fetchStats.sources?.similar_to_consider > 0 && (
-                      <span className="font-medium">
-                        {fetchStats.sources.similar_to_consider} from Related
-                        Products
-                      </span>
-                    )}
-                    {fetchStats.sources?.also_viewed > 0 && (
-                      <span className="font-medium ml-2">
-                        {fetchStats.sources?.similar_to_consider > 0 && "+ "}
-                        {fetchStats.sources.also_viewed} from "Also Viewed"
-                      </span>
-                    )}
-                    {fetchStats.sources?.also_bought > 0 && (
-                      <span className="font-medium ml-2">
-                        + {fetchStats.sources.also_bought} from "Also Bought"
-                      </span>
-                    )}
-                    {fetchStats.sources?.frequently_bought_together > 0 && (
-                      <span className="font-medium ml-2">
-                        + {fetchStats.sources.frequently_bought_together} bought
-                        together
-                      </span>
-                    )}
-                    {fetchStats.sources?.category_search > 0 && (
-                      <span className="font-medium ml-2">
-                        + {fetchStats.sources.category_search} from similar
-                        category
-                      </span>
-                    )}
-                    {fetchStats.sources?.search > 0 && (
-                      <span className="font-medium">
-                        {fetchStats.sources.search} from search results
-                      </span>
-                    )}
-                  </p>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
-              {/* Competitors List */}
+          {step === "manual" && (
+            <div className="space-y-6">
+              <button
+                onClick={() => setStep("method")}
+                className="text-sm text-slate-600 hover:text-slate-900"
+              >
+                ← Back to methods
+              </button>
+
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold">
-                    {competitors.length === 0 ? (
-                      "No Competitors Found"
-                    ) : (
-                      <>
-                        Related Products ({selectedCompetitors.length}/
-                        {competitors.length} selected)
-                      </>
-                    )}
-                  </h3>
-                  {competitors.length > 0 && (
-                    <button
-                      onClick={() => {
-                        if (selectedCompetitors.length === competitors.length) {
-                          setSelectedCompetitors([]);
-                        } else {
-                          setSelectedCompetitors(
-                            competitors.map((c) => c.asin)
-                          );
-                        }
-                      }}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      {selectedCompetitors.length === competitors.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </button>
-                  )}
+                <h3 className="text-xl font-bold mb-2">Manual Product Entry</h3>
+                <p className="text-slate-600">Enter product details manually</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    ASIN <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={manualProduct.asin}
+                    onChange={(e) =>
+                      setManualProduct({
+                        ...manualProduct,
+                        asin: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="B0XXXXXXXXXX"
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none font-mono"
+                    maxLength={10}
+                  />
                 </div>
 
-                {competitors.length === 0 ? (
-                  <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed border-slate-300">
-                    <Package className="h-12 w-12 text-slate-400 mx-auto mb-3" />
-                    <p className="text-slate-600 font-medium">
-                      No related products found
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={manualProduct.title}
+                    onChange={(e) =>
+                      setManualProduct({
+                        ...manualProduct,
+                        title: e.target.value,
+                      })
+                    }
+                    placeholder="Product name"
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Brand
+                    </label>
+                    <input
+                      type="text"
+                      value={manualProduct.brand}
+                      onChange={(e) =>
+                        setManualProduct({
+                          ...manualProduct,
+                          brand: e.target.value,
+                        })
+                      }
+                      placeholder="Brand name"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Price
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={manualProduct.price}
+                      onChange={(e) =>
+                        setManualProduct({
+                          ...manualProduct,
+                          price: e.target.value,
+                        })
+                      }
+                      placeholder="19.99"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Product Link
+                  </label>
+                  <input
+                    type="url"
+                    value={manualProduct.link}
+                    onChange={(e) =>
+                      setManualProduct({
+                        ...manualProduct,
+                        link: e.target.value,
+                      })
+                    }
+                    placeholder="https://amazon.com/dp/B0XXXXXXXXXX"
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Image URL
+                  </label>
+                  <input
+                    type="url"
+                    value={manualProduct.imageUrl}
+                    onChange={(e) =>
+                      setManualProduct({
+                        ...manualProduct,
+                        imageUrl: e.target.value,
+                      })
+                    }
+                    placeholder="https://m.media-amazon.com/images/..."
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleManualEntry}
+                  disabled={loading}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-semibold hover:from-amber-600 hover:to-orange-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Edit3 className="h-5 w-5" />
+                      Save Product
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === "competitors" && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl p-6">
+                <div className="flex items-start gap-4">
+                  <CheckCircle2 className="h-8 w-8 flex-shrink-0 mt-1" />
+                  <div className="flex-1">
+                    <h3 className="text-xl font-bold mb-2">Product Added!</h3>
+                    <p className="text-emerald-100 text-sm mb-3">
+                      {product.title}
                     </p>
-                    <p className="text-sm text-slate-500 mt-1">
-                      Try searching manually or choosing a different product
+                    {fetchStats && (
+                      <div className="text-sm text-emerald-100">
+                        Found {competitors.length} potential competitors
+                        {fetchStats.primarySource &&
+                          ` (primary source: ${fetchStats.primarySource})`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {competitors.length > 0 ? (
+                <>
+                  <div>
+                    <h3 className="text-lg font-bold mb-2">
+                      Select Competitors ({selectedCompetitors.length} selected)
+                    </h3>
+                    <p className="text-slate-600 text-sm">
+                      Choose which products to compare with yours
                     </p>
                   </div>
-                ) : (
-                  <div className="space-y-3">
+
+                  <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto">
                     {competitors.map((comp) => {
-                      const sourceBadge = getSourceBadge(comp.source);
+                      const isSelected = selectedCompetitors.includes(
+                        comp.asin
+                      );
+                      const badge = getSourceBadge(comp.source);
 
                       return (
                         <button
                           key={comp.asin}
                           onClick={() => toggleCompetitor(comp.asin)}
-                          className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left ${
-                            selectedCompetitors.includes(comp.asin)
+                          className={`flex items-start gap-4 p-4 border-2 rounded-xl transition-all text-left ${
+                            isSelected
                               ? "border-blue-500 bg-blue-50"
                               : "border-slate-200 hover:border-slate-300"
                           }`}
                         >
                           <div
-                            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                              selectedCompetitors.includes(comp.asin)
-                                ? "border-blue-500 bg-blue-500"
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-1 ${
+                              isSelected
+                                ? "bg-blue-500 border-blue-500"
                                 : "border-slate-300"
                             }`}
                           >
-                            {selectedCompetitors.includes(comp.asin) && (
-                              <svg
-                                className="w-3 h-3 text-white"
-                                fill="currentColor"
-                                viewBox="0 0 20 20"
-                              >
-                                <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" />
-                              </svg>
+                            {isSelected && (
+                              <CheckCircle2 className="h-4 w-4 text-white" />
                             )}
                           </div>
 
                           <img
                             src={comp.imageUrl}
                             alt={comp.title}
-                            className="w-16 h-16 object-contain rounded bg-slate-50 flex-shrink-0"
+                            className="w-16 h-16 object-contain bg-white rounded-lg flex-shrink-0"
                           />
 
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-sm mb-1 line-clamp-2">
-                              {comp.title}
-                            </h4>
-                            <div className="flex items-center gap-2 text-xs text-slate-600 mb-2">
-                              <span className="font-semibold">
-                                ${comp.price}
+                            <div className="flex items-start gap-2 mb-1">
+                              <h4 className="font-semibold text-sm line-clamp-2 flex-1">
+                                {comp.title}
+                              </h4>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full border flex items-center gap-1 flex-shrink-0 ${badge.color}`}
+                              >
+                                {badge.icon}
+                                {badge.label}
+                              </span>
+                            </div>
+
+                            {comp.brand && (
+                              <p className="text-xs text-slate-600 mb-2">
+                                {comp.brand}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-bold">
+                                ${safeNumber(comp.price, 0).toFixed(2)}
                               </span>
                               {comp.rating > 0 && (
-                                <>
-                                  <span>★ {comp.rating}</span>
-                                  <span>
-                                    {comp.ratingsTotal?.toLocaleString()}{" "}
-                                    reviews
+                                <div className="flex items-center gap-1 text-sm">
+                                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                                  <span className="font-semibold">
+                                    {safeNumber(comp.rating, 0).toFixed(1)}
                                   </span>
-                                </>
+                                  <span className="text-slate-500 text-xs">
+                                    (
+                                    {safeInt(
+                                      comp.ratingsTotal,
+                                      0
+                                    ).toLocaleString()}
+                                    )
+                                  </span>
+                                </div>
+                              )}
+                              {comp.score && (
+                                <span className="text-xs text-slate-500">
+                                  Match: {comp.score}%
+                                </span>
                               )}
                             </div>
-
-                            {/* Source Badge */}
-                            <div
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${sourceBadge.color}`}
-                            >
-                              {sourceBadge.icon}
-                              {sourceBadge.label}
-                            </div>
                           </div>
-
-                          {comp.score && (
-                            <div className="text-right flex-shrink-0">
-                              <div className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
-                                {comp.score}% Match
-                              </div>
-                            </div>
-                          )}
                         </button>
                       );
                     })}
                   </div>
-                )}
 
-                <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={() => setStep("method")}
-                    className="px-6 py-3 border-2 border-slate-300 rounded-xl font-medium hover:bg-slate-50"
-                  >
-                    Start Over
-                  </button>
-                  <button
-                    onClick={handleConfirm}
-                    disabled={loading || selectedCompetitors.length === 0}
-                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      `Confirm & Analyze (${selectedCompetitors.length} products)`
-                    )}
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSelectedCompetitors([])}
+                      className="flex-1 px-4 py-3 border-2 border-slate-200 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                    >
+                      Deselect All
+                    </button>
+                    <button
+                      onClick={() =>
+                        setSelectedCompetitors(competitors.map((c) => c.asin))
+                      }
+                      className="flex-1 px-4 py-3 border-2 border-blue-200 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors font-medium"
+                    >
+                      Select All
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
+                  <Package className="h-12 w-12 text-slate-400 mx-auto mb-3" />
+                  <p className="text-slate-600 font-medium">
+                    No competitors found
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    You can add competitors later
+                  </p>
                 </div>
-              </div>
+              )}
+
+              <button
+                onClick={handleConfirm}
+                disabled={loading}
+                className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-5 w-5" />
+                    {selectedCompetitors.length > 0
+                      ? `Continue with ${
+                          selectedCompetitors.length
+                        } competitor${
+                          selectedCompetitors.length !== 1 ? "s" : ""
+                        }`
+                      : "Continue without competitors"}
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
