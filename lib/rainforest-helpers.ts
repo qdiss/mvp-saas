@@ -1,5 +1,5 @@
-// lib/rainforest-helpers-final.ts
-// ✅ FINAL FIX: Videos are in `videos_additional` field, not `videos`!
+// lib/rainforest-helpers.ts
+// ✅ FINAL FIX: Videos insert one-by-one to avoid SQL limits
 
 import { db } from "@/database/client";
 import {
@@ -33,28 +33,81 @@ export async function fetchFromRainforest(params: any) {
 
   console.log("[RAINFOREST] Response:", {
     hasProduct: !!data.product,
+    hasMainImage: !!data.product?.main_image?.link,
+    imagesCount: data.product?.images?.length || 0,
     videosCount: data.product?.videos_count || 0,
-    hasVideosAdditional: !!data.product?.videos_additional,
-    videosAdditionalLength: data.product?.videos_additional?.length || 0,
   });
 
   return data;
 }
 
 /**
- * ✅ FIXED: Extract videos from videos_additional field
+ * ✅ NEW: Extract and organize images properly
+ */
+export function extractImagesFromRainforest(productData: any) {
+  // 1. Get main/hero image
+  const mainImageUrl = productData.main_image?.link || null;
+
+  // 2. Get all images from images array
+  const allImages = productData.images || [];
+  const imageLinks = allImages.map((img: any) => img.link);
+
+  // 3. ✅ CRITICAL: Build imageUrls array with main image FIRST
+  let imageUrls: string[] = [];
+
+  if (mainImageUrl) {
+    // Start with main image
+    imageUrls.push(mainImageUrl);
+
+    // Add other images (excluding main if it's already in the array)
+    const otherImages = imageLinks.filter(
+      (url: string) => url !== mainImageUrl
+    );
+    imageUrls.push(...otherImages);
+  } else {
+    // No main image, just use all images
+    imageUrls = imageLinks;
+  }
+
+  // 4. Fallback to images_flat if array is empty
+  if (imageUrls.length === 0 && productData.images_flat) {
+    imageUrls = productData.images_flat.split(",").map((s: string) => s.trim());
+
+    // If we got images from flat but no main image, use first one
+    if (!mainImageUrl && imageUrls.length > 0) {
+      return {
+        mainImageUrl: imageUrls[0],
+        imageUrls,
+        images: allImages,
+        imagesCount: imageUrls.length,
+      };
+    }
+  }
+
+  console.log(`[IMAGES] Extracted for ${productData.asin}:`, {
+    mainImageUrl: mainImageUrl ? "✅" : "❌",
+    imageUrlsCount: imageUrls.length,
+    mainIsFirst: imageUrls[0] === mainImageUrl,
+    firstImage: imageUrls[0]?.substring(0, 60),
+  });
+
+  return {
+    mainImageUrl,
+    imageUrls,
+    images: allImages,
+    imagesCount: imageUrls.length,
+  };
+}
+
+/**
+ * Extract videos from videos_additional field
  */
 export function extractAllVideos(productData: any): any[] {
   const videos: any[] = [];
 
   console.log("[VIDEO EXTRACTION] Starting extraction for:", productData.asin);
-  console.log("[VIDEO EXTRACTION] videos_count:", productData.videos_count);
-  console.log(
-    "[VIDEO EXTRACTION] videos_additional:",
-    !!productData.videos_additional
-  );
 
-  // ✅ FIX: Rainforest API stores videos in `videos_additional` field!
+  // ✅ Rainforest API stores videos in `videos_additional` field
   if (
     productData.videos_additional &&
     Array.isArray(productData.videos_additional)
@@ -70,7 +123,7 @@ export function extractAllVideos(productData: any): any[] {
     );
   }
 
-  // Also try other locations (just in case)
+  // Also try other locations
   if (productData.videos && Array.isArray(productData.videos)) {
     console.log(
       `[VIDEO EXTRACTION] Found ${productData.videos.length} videos in 'videos'`
@@ -83,25 +136,14 @@ export function extractAllVideos(productData: any): any[] {
     );
   }
 
-  if (productData.related_videos && Array.isArray(productData.related_videos)) {
-    console.log(
-      `[VIDEO EXTRACTION] Found ${productData.related_videos.length} videos in 'related_videos'`
-    );
-    videos.push(
-      ...productData.related_videos.map((v: any) => ({
-        ...v,
-        source: "related_videos",
-      }))
-    );
-  }
-
   console.log(`[VIDEO EXTRACTION] ✅ Total videos extracted: ${videos.length}`);
 
   return videos;
 }
 
 /**
- * Save product videos with proper field mapping for Rainforest structure
+ * Save product videos
+ * ✅ FIXED: Insert one by one to avoid SQL parameter limits and handle duplicates
  */
 export async function saveProductVideos(asin: string, videosData: any[]) {
   if (!videosData || videosData.length === 0) {
@@ -114,37 +156,46 @@ export async function saveProductVideos(asin: string, videosData: any[]) {
   // Delete old videos
   await db.delete(productVideos).where(eq(productVideos.asin, asin));
 
-  // Map Rainforest video structure to our schema
-  const videoRecords = videosData.map((video, index) => {
-    // Rainforest API structure:
-    // - id: video ID
-    // - video_url: main video URL
-    // - video_image_url: thumbnail
-    // - duration: duration string like "1:58"
-    // - title: video title
-    // - public_name: creator name
-    // - profile_link: creator profile
+  let savedCount = 0;
+  let skippedCount = 0;
 
-    return {
-      videoId: video.id || `${asin}-${Date.now()}-${Math.random()}`,
-      asin,
-      title: video.title || `Video ${index + 1}`,
-      thumbnailUrl: video.video_image_url || video.thumbnail || null,
-      videoUrl: video.video_url || video.url || null,
-      duration: video.duration ? parseDuration(video.duration) : null,
-      creatorType: video.vendor_code?.includes("influencer")
-        ? "customer"
-        : "brand",
-      creatorName: video.public_name || video.vendor_name || null,
-      creatorProfileUrl: video.profile_link || null,
-      type: video.type === "videos_for_this_product" ? "hero" : "review",
-      closedCaptions: video.closed_captions || null,
-      createdAt: new Date(),
-    };
-  });
+  // ✅ Insert videos ONE BY ONE to avoid SQL limits
+  for (let index = 0; index < videosData.length; index++) {
+    const video = videosData[index];
 
-  await db.insert(productVideos).values(videoRecords);
-  console.log(`[VIDEOS] ✅ Saved ${videoRecords.length} videos`);
+    try {
+      const videoRecord = {
+        videoId: video.id || `${asin}-${Date.now()}-${index}`,
+        asin,
+        title: video.title || `Video ${index + 1}`,
+        thumbnailUrl: video.video_image_url || video.thumbnail || null,
+        videoUrl: video.video_url || video.url || null,
+        duration: video.duration ? parseDuration(video.duration) : null,
+        creatorType: video.vendor_code?.includes("influencer")
+          ? "customer"
+          : "brand",
+        creatorName: video.public_name || video.vendor_name || null,
+        creatorProfileUrl: video.profile_link || null,
+        type: video.type === "videos_for_this_product" ? "hero" : "review",
+        closedCaptions: video.closed_captions || null,
+        createdAt: new Date(),
+      };
+
+      await db.insert(productVideos).values(videoRecord).onConflictDoNothing(); // ✅ Ignore duplicates
+
+      savedCount++;
+    } catch (error: any) {
+      console.error(
+        `[VIDEOS] ⚠️ Failed to save video ${index + 1}:`,
+        error.message
+      );
+      skippedCount++;
+    }
+  }
+
+  console.log(
+    `[VIDEOS] ✅ Saved ${savedCount}/${videosData.length} videos (skipped: ${skippedCount})`
+  );
 }
 
 /**
@@ -177,7 +228,6 @@ export async function saveProductImages(asin: string, imagesData: any[]) {
   // Delete old images
   await db.delete(productImages).where(eq(productImages.asin, asin));
 
-  // ✅ FIX: Type variant as enum values
   type ImageVariant =
     | "MAIN"
     | "PT01"
@@ -216,7 +266,7 @@ export async function saveProductImages(asin: string, imagesData: any[]) {
 }
 
 /**
- * ✅ FIXED: Save complete product with video extraction from videos_additional
+ * ✅ FIXED: Save complete product with proper image handling
  */
 export async function saveProductToDatabase(
   productData: any,
@@ -229,8 +279,6 @@ export async function saveProductToDatabase(
     title,
     link,
     brand,
-    main_image,
-    images,
     feature_bullets,
     rating,
     ratings_total,
@@ -250,17 +298,20 @@ export async function saveProductToDatabase(
     search_alias,
   } = productData;
 
-  // ✅ Extract videos from videos_additional field
+  // ✅ Extract images properly with main image first
+  const imageData = extractImagesFromRainforest(productData);
+
+  // Extract videos
   const extractedVideos = extractAllVideos(productData);
 
   console.log(`[SAVE ${isMyProduct ? "MY PRODUCT" : "COMPETITOR"}]`, {
     asin,
     title: title?.substring(0, 50),
     isMyProduct,
-    extractedVideosCount: extractedVideos.length,
-    videosCount: videos_count,
-    hasAPlusContent: !!a_plus_content,
-    imagesCount: images?.length || 0,
+    mainImage: imageData.mainImageUrl ? "✅" : "❌",
+    imageUrlsCount: imageData.imageUrls.length,
+    mainIsFirst: imageData.imageUrls[0] === imageData.mainImageUrl,
+    videosCount: extractedVideos.length,
   });
 
   // 1. Save main product record
@@ -315,13 +366,13 @@ export async function saveProductToDatabase(
       // Bestseller Rank
       bestsellerRank: bestsellers_rank || null,
 
-      // Images
-      mainImageUrl: main_image?.link || null,
-      imageUrls: images?.map((img: any) => img.link) || [],
-      imagesCount: images?.length || 0,
+      // ✅ Images - with main image first!
+      mainImageUrl: imageData.mainImageUrl,
+      imageUrls: imageData.imageUrls,
+      imagesCount: imageData.imagesCount,
       has360View: has_360_view || false,
 
-      // Videos - use extracted count
+      // Videos
       hasVideo: extractedVideos.length > 0,
 
       // Features
@@ -366,11 +417,15 @@ export async function saveProductToDatabase(
         ratingsTotal: ratings_total || 0,
         isMyProduct,
         comparisonId,
+
+        // ✅ Update images too!
+        mainImageUrl: imageData.mainImageUrl,
+        imageUrls: imageData.imageUrls,
+        imagesCount: imageData.imagesCount,
+
         hasVideo: extractedVideos.length > 0,
         hasAPlusContent: !!a_plus_content,
         aPlusModules: a_plus_content || null,
-        imagesCount: images?.length || 0,
-        imageUrls: images?.map((img: any) => img.link) || [],
         rawData: productData,
         lastFetchedAt: new Date(),
         updatedAt: new Date(),
@@ -378,26 +433,29 @@ export async function saveProductToDatabase(
     })
     .returning();
 
-  console.log(
-    `[SAVE ${isMyProduct ? "MY PRODUCT" : "COMPETITOR"}] ✅ Product saved:`,
-    {
-      asin: productRecord.asin,
-      isMyProduct: productRecord.isMyProduct,
-      hasVideo: productRecord.hasVideo,
-      hasAPlusContent: productRecord.hasAPlusContent,
-    }
-  );
+  console.log(`[SAVE] ✅ Product saved:`, {
+    asin: productRecord.asin,
+    mainImageUrl: productRecord.mainImageUrl ? "✅" : "❌",
+    imageUrlsCount: productRecord.imageUrls?.length || 0,
+    mainIsFirst: productRecord.imageUrls?.[0] === productRecord.mainImageUrl,
+  });
 
-  // 2. Save images
-  if (images && images.length > 0) {
-    await saveProductImages(asin, images);
+  // 2. Save images to product_images table
+  if (imageData.images && imageData.images.length > 0) {
+    await saveProductImages(asin, imageData.images);
   }
 
-  // 3. Save videos
+  // 3. Save videos (with error handling now)
   if (extractedVideos.length > 0) {
-    await saveProductVideos(asin, extractedVideos);
-  } else {
-    console.log(`[VIDEOS] ⚠️ No videos found for ${asin}`);
+    try {
+      await saveProductVideos(asin, extractedVideos);
+    } catch (error: any) {
+      console.error(
+        `[SAVE] ⚠️ Video save failed for ${asin}, but continuing:`,
+        error.message
+      );
+      // Don't throw - let product be saved even if videos fail
+    }
   }
 
   return productRecord;

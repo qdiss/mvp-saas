@@ -1,5 +1,5 @@
 // app/api/products/fetch-multi/route.ts
-// ✅ FINAL: Uses centralized helpers with videos_additional support + TypeScript fixes
+// ✅ FIXED: Properly processes ALL ASINs in batches with correct indexing
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -49,9 +49,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (asins.length > 10) {
+    if (asins.length > 15) {
       return NextResponse.json(
-        { error: "Maximum 10 ASINs allowed" },
+        { error: "Maximum 15 ASINs allowed" },
         { status: 400 }
       );
     }
@@ -101,18 +101,31 @@ export async function POST(request: NextRequest) {
         .returning();
     }
 
-    // ✅ Fetch all products in parallel (batches of 3 to respect rate limits)
+    // ✅ FIXED: Fetch all products in parallel (batches of 3 to respect rate limits)
     const batchSize = 3;
     const allProducts: ProductResponse[] = [];
     const errors: FetchError[] = [];
+    let globalIndex = 0; // ✅ Track global position across all batches
 
     for (let i = 0; i < asins.length; i += batchSize) {
       const batch = asins.slice(i, i + batchSize);
 
+      console.log(
+        `[MULTI-ASIN] Processing batch ${i / batchSize + 1}/${Math.ceil(
+          asins.length / batchSize
+        )}...`
+      );
+
       const batchResults = await Promise.allSettled(
         batch.map(async (asin: string, batchIndex: number) => {
+          const currentGlobalIndex = globalIndex + batchIndex; // ✅ Calculate global index
+
           try {
-            console.log(`[MULTI-ASIN] Fetching ${asin}...`);
+            console.log(
+              `[MULTI-ASIN] [${currentGlobalIndex + 1}/${
+                asins.length
+              }] Fetching ${asin}...`
+            );
 
             // ✅ Use centralized helper
             const productData = await fetchCompleteProductData(
@@ -124,8 +137,12 @@ export async function POST(request: NextRequest) {
               throw new Error(`Product ${asin} not found`);
             }
 
-            // First product is "My Product", rest are competitors
-            const isMyProduct = i === 0 && batchIndex === 0;
+            // ✅ FIXED: First product overall (index 0) is "My Product"
+            const isMyProduct = currentGlobalIndex === 0;
+
+            console.log(
+              `[MULTI-ASIN] ${asin} - isMyProduct: ${isMyProduct} (global index: ${currentGlobalIndex})`
+            );
 
             // ✅ Use centralized save function
             await saveProductToDatabase(
@@ -142,7 +159,7 @@ export async function POST(request: NextRequest) {
                 .values({
                   comparisonId: comparison.id,
                   asin,
-                  position: i + batchIndex,
+                  position: currentGlobalIndex,
                   isVisible: true,
                   addedBy: folder.createdBy,
                   addedAt: new Date(),
@@ -194,15 +211,19 @@ export async function POST(request: NextRequest) {
         }
       });
 
+      // ✅ Update global index for next batch
+      globalIndex += batch.length;
+
       // Small delay between batches
       if (i + batchSize < asins.length) {
+        console.log(`[MULTI-ASIN] Waiting 500ms before next batch...`);
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
 
     if (allProducts.length === 0) {
       return NextResponse.json(
-        { error: "Failed to fetch any products" },
+        { error: "Failed to fetch any products", errors },
         { status: 500 }
       );
     }
@@ -223,8 +244,11 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[MULTI-ASIN] Successfully fetched ${allProducts.length}/${asins.length} products`
+      `[MULTI-ASIN] ✅ Successfully fetched ${allProducts.length}/${asins.length} products`
     );
+    if (errors.length > 0) {
+      console.log(`[MULTI-ASIN] ⚠️ ${errors.length} products failed:`, errors);
+    }
 
     return NextResponse.json({
       success: true,

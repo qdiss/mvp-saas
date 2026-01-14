@@ -1,5 +1,5 @@
 // app/folders/[id]/page.tsx
-// FIXED: Added handleProductDeleted + proper type handling
+// ✅ FIXED: Folder name is NEVER changed automatically
 
 "use client";
 
@@ -68,13 +68,30 @@ export default function CompetitiveAnalysisPage({
           if (comparison.primaryProduct) {
             const product = comparison.primaryProduct;
 
+            console.log("[DEBUG] Primary Product from API:", {
+              asin: product.asin,
+              title: product.title?.substring(0, 40),
+              mainImageUrl: product.mainImageUrl,
+              imageUrls: product.imageUrls,
+              images: product.images,
+            });
+
+            // ✅ Use imageUrls array (already has hero image first)
+            const photos = product.imageUrls || [];
+
+            console.log("[DEBUG] Mapped photos:", {
+              photosCount: photos.length,
+              firstPhoto: photos[0],
+              isHeroImage: photos[0] === product.mainImageUrl,
+            });
+
             setMyProduct({
               id: product.asin,
               name: product.title,
               price: parseFloat(product.price || "0"),
               rating: parseFloat(product.rating || "0"),
               reviews: product.ratingsTotal || 0,
-              photos: product.images?.map((img: any) => img.imageUrl) || [],
+              photos: photos,
               asin: product.asin,
               brand: product.brand,
               link: product.link,
@@ -88,36 +105,53 @@ export default function CompetitiveAnalysisPage({
               comparisonId: comparison.id,
               rawData: product.rawData,
             });
+
+            console.log(
+              "[DEBUG] myProduct state set with photos:",
+              photos.length
+            );
           }
 
           // Set COMPETITORS
           if (comparison.competitorProducts?.length > 0) {
             setCompetitors(
-              comparison.competitorProducts.map((comp: any) => ({
-                id: comp.asin,
-                name: comp.title,
-                price: parseFloat(comp.price || "0"),
-                rating: parseFloat(comp.rating || "0"),
-                reviews: comp.ratingsTotal || 0,
-                photos: comp.images?.map((img: any) => img.imageUrl) || [],
-                asin: comp.asin,
-                brand: comp.brand,
-                link: comp.link,
-                selected: true,
-                matchScore: comp.matchScore
-                  ? parseFloat(comp.matchScore)
-                  : null,
-                features: comp.featureBullets || [],
-                specifications: comp.specifications || [],
-                inStock: comp.isInStock,
-                isPrime: comp.isPrime,
-                bestsellerRank: comp.bestsellerRank,
-                category: comp.categoriesFlat,
-                addedAt: comp.addedAt,
-                position: comp.position,
-                comparisonId: comparison.id,
-                rawData: comp.rawData,
-              }))
+              comparison.competitorProducts.map((comp: any) => {
+                const photos = comp.imageUrls || [];
+
+                console.log("[LOAD] Competitor photos:", {
+                  asin: comp.asin,
+                  imageUrlsCount: comp.imageUrls?.length || 0,
+                  finalPhotosCount: photos.length,
+                  firstPhoto: photos[0],
+                  isHeroImage: photos[0] === comp.mainImageUrl,
+                });
+
+                return {
+                  id: comp.asin,
+                  name: comp.title,
+                  price: parseFloat(comp.price || "0"),
+                  rating: parseFloat(comp.rating || "0"),
+                  reviews: comp.ratingsTotal || 0,
+                  photos: photos,
+                  asin: comp.asin,
+                  brand: comp.brand,
+                  link: comp.link,
+                  selected: true,
+                  matchScore: comp.matchScore
+                    ? parseFloat(comp.matchScore)
+                    : null,
+                  features: comp.featureBullets || [],
+                  specifications: comp.specifications || [],
+                  inStock: comp.isInStock,
+                  isPrime: comp.isPrime,
+                  bestsellerRank: comp.bestsellerRank,
+                  category: comp.categoriesFlat,
+                  addedAt: comp.addedAt,
+                  position: comp.position,
+                  comparisonId: comparison.id,
+                  rawData: comp.rawData,
+                };
+              })
             );
           }
 
@@ -157,30 +191,28 @@ export default function CompetitiveAnalysisPage({
     setCompetitors((prev) => prev.map((p) => (p.id === id ? updater(p) : p)));
   };
 
-  // ✅ FIXED: Added handleProductDeleted function
   const handleProductDeleted = (productId: string) => {
     console.log("Product deleted:", productId);
-    // Remove from competitors list
     setCompetitors((prev) => prev.filter((c) => c.id !== productId));
   };
 
+  // ✅ CRITICAL: This function should NEVER update the folder name
+  // The folder name should only be changed by explicit user action in FolderManager
   const handleProductAdded = async (
     product: any,
     selectedCompetitors: any[]
   ) => {
-    console.log("Product added:", product);
+    console.log("[handleProductAdded] Product added:", product.title);
 
-    // Update folder name
-    await fetch(`/api/folders/${folderId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: `${product.title.substring(0, 40)}... Analysis`,
-      }),
-    });
+    // ❌ REMOVED: Never auto-update folder name
+    // Folders should keep their original name set by the user
 
-    // Reload from database
+    // ✅ Only reload the comparison data
     await loadExistingComparison();
+
+    console.log(
+      "[handleProductAdded] Comparison reloaded, folder name preserved"
+    );
   };
 
   const selectedCompetitors = competitors.filter((c) => c.selected);
