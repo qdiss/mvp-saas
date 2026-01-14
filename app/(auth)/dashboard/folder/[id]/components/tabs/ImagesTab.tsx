@@ -477,6 +477,7 @@ function ProductColumn({
                     onOpenReview={() => {}}
                     onError={() => onImageError(photoId)}
                     onLoad={() => onImageLoad(photoId)}
+                    onFullscreen={() => onFullscreen(photoId)}
                   />
 
                   {/* Loading/Error States */}
@@ -493,18 +494,6 @@ function ProductColumn({
                       </div>
                     </div>
                   )}
-
-                  {/* Fullscreen button on hover */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onFullscreen(photoId);
-                    }}
-                    className="absolute top-1 left-1 p-1.5 bg-white/90 hover:bg-white rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="View fullscreen"
-                  >
-                    <ZoomIn className="h-3 w-3" />
-                  </button>
                 </div>
               );
             })}

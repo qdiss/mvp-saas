@@ -541,18 +541,6 @@ export function AddProductFlow({
 
       setSavingProgress("Updating comparison...");
 
-      try {
-        await fetch(`/api/folders/${folderId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: `${product.title.substring(0, 40)}... Analysis`,
-          }),
-        });
-      } catch (err) {
-        console.log("Folder update skipped");
-      }
-
       setSavingProgress("Complete!");
 
       const selectedComps = competitors.filter((c) =>

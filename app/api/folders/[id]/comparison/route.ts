@@ -1,5 +1,5 @@
 // app/api/folders/[id]/comparison/route.ts
-// FIXED: Properly maps imageUrls to photos array
+// FIXED: Now includes mainImageUrl for primary product
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -173,7 +173,8 @@ export async function GET(
               categoriesFlat: primaryProduct.categoriesFlat,
               bestsellerRank: primaryProduct.bestsellerRank,
 
-              // Images - properly mapped
+              // ✅ FIXED: Now includes mainImageUrl
+              mainImageUrl: primaryProduct.mainImageUrl,
               imageUrls: primaryProduct.imageUrls || [],
               images: primaryProduct.images,
 

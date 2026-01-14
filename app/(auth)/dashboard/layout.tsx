@@ -16,15 +16,52 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { usePathname } from "next/navigation";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { NotificationBadge } from "@/components/NotificationBadge";
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { userId } = useAuth();
 
   const segments = pathname.split("/").filter(Boolean);
+  const [folderNames, setFolderNames] = useState<Record<string, string>>({});
+
+  // Fetch folder names for folder IDs
+  useEffect(() => {
+    const fetchFolderNames = async () => {
+      const newFolderNames: Record<string, string> = {};
+
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const prevSegment = segments[i - 1];
+
+        // If previous segment is "folder" or "folders", this segment is a folder ID
+        if (
+          (prevSegment === "folder" || prevSegment === "folders") &&
+          segment.length > 20
+        ) {
+          try {
+            const response = await fetch(`/api/folders/${segment}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.folder?.name) {
+                newFolderNames[segment] = data.folder.name;
+              }
+            }
+          } catch (error) {
+            console.error("Error fetching folder name:", error);
+          }
+        }
+      }
+
+      if (Object.keys(newFolderNames).length > 0) {
+        setFolderNames((prev) => ({ ...prev, ...newFolderNames }));
+      }
+    };
+
+    fetchFolderNames();
+  }, [pathname]);
 
   return (
     <SidebarProvider>
@@ -40,8 +77,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {segments.map((segment, idx) => {
                   const isLast = idx === segments.length - 1;
                   const href = "/" + segments.slice(0, idx + 1).join("/");
-                  const label =
-                    segment.charAt(0).toUpperCase() + segment.slice(1);
+                  const prevSegment = segments[idx - 1];
+
+                  // Check if this is a folder ID
+                  const isFolderId =
+                    (prevSegment === "folder" || prevSegment === "folders") &&
+                    segment.length > 20;
+
+                  // Use folder name if available, otherwise capitalize segment
+                  const label = isFolderId
+                    ? folderNames[segment] || "Loading..."
+                    : segment.charAt(0).toUpperCase() + segment.slice(1);
 
                   return (
                     <React.Fragment key={href}>

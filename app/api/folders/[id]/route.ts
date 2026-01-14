@@ -44,15 +44,41 @@ export async function PATCH(
 
     const { name, description, category, color, icon } = body;
 
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
+    // ✅ FIX: Only build updateData if there are actual changes
+    const updateData: any = {};
+    let hasChanges = false;
 
-    if (name !== undefined) updateData.name = name;
-    if (description !== undefined) updateData.description = description;
-    if (category !== undefined) updateData.category = category;
-    if (color !== undefined) updateData.color = color;
-    if (icon !== undefined) updateData.icon = icon;
+    if (name !== undefined) {
+      updateData.name = name;
+      hasChanges = true;
+    }
+    if (description !== undefined) {
+      updateData.description = description;
+      hasChanges = true;
+    }
+    if (category !== undefined) {
+      updateData.category = category;
+      hasChanges = true;
+    }
+    if (color !== undefined) {
+      updateData.color = color;
+      hasChanges = true;
+    }
+    if (icon !== undefined) {
+      updateData.icon = icon;
+      hasChanges = true;
+    }
+
+    // ✅ FIX: Only update if there are actual changes
+    if (!hasChanges) {
+      return NextResponse.json({
+        success: true,
+        message: "No changes to update",
+      });
+    }
+
+    // Only set updatedAt when there are actual changes
+    updateData.updatedAt = new Date();
 
     const [updatedFolder] = await db
       .update(folders)
