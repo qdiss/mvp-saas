@@ -1,5 +1,5 @@
 // app/folders/[id]/page.tsx
-// ✅ FIXED: Folder name is NEVER changed automatically
+// ✅ UPDATED: Now has separate button for adding competitors
 
 "use client";
 
@@ -16,6 +16,7 @@ import { PricingTab } from "./components/tabs/PricingTab";
 import { ContentTab } from "./components/tabs/ContentTab";
 import { APlusContentTab } from "./components/tabs/APlusContentTab";
 import { AddProductFlow } from "./components/AddProductFlow";
+import { AddCompetitorsFlow } from "./components/AddCompetitorsFlow";
 
 export default function CompetitiveAnalysisPage({
   params,
@@ -196,23 +197,21 @@ export default function CompetitiveAnalysisPage({
     setCompetitors((prev) => prev.filter((c) => c.id !== productId));
   };
 
-  // ✅ CRITICAL: This function should NEVER update the folder name
-  // The folder name should only be changed by explicit user action in FolderManager
   const handleProductAdded = async (
     product: any,
     selectedCompetitors: any[]
   ) => {
     console.log("[handleProductAdded] Product added:", product.title);
-
-    // ❌ REMOVED: Never auto-update folder name
-    // Folders should keep their original name set by the user
-
-    // ✅ Only reload the comparison data
     await loadExistingComparison();
-
     console.log(
       "[handleProductAdded] Comparison reloaded, folder name preserved"
     );
+  };
+
+  // ✅ NEW: Handler for competitors-only flow
+  const handleCompetitorsAdded = async () => {
+    console.log("[handleCompetitorsAdded] Competitors added, reloading...");
+    await loadExistingComparison();
   };
 
   const selectedCompetitors = competitors.filter((c) => c.selected);
@@ -289,10 +288,23 @@ export default function CompetitiveAnalysisPage({
           <div className="flex-1">
             <h1 className="text-2xl font-semibold">{folderSettings.name}</h1>
           </div>
-          <AddProductFlow
-            folderId={folderId}
-            onProductAdded={handleProductAdded}
-          />
+
+          {/* ✅ NEW: Two separate buttons */}
+          <div className="flex items-center gap-3">
+            {/* Only show "Add Competitors" if we already have My Product */}
+            {myProduct.name && (
+              <AddCompetitorsFlow
+                folderId={folderId}
+                onCompetitorsAdded={handleCompetitorsAdded}
+              />
+            )}
+
+            {/* Original "Add Product" button
+            <AddProductFlow
+              folderId={folderId}
+              onProductAdded={handleProductAdded}
+            /> */}
+          </div>
         </div>
 
         <StatsCards myProduct={myProduct} competitors={selectedCompetitors} />

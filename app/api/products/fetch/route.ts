@@ -1,5 +1,5 @@
 // app/api/products/fetch/route.ts
-// ✅ FINAL: Uses centralized helpers with videos_additional support
+// ✅ FIXED: Now returns related products when skipRelatedProducts=false
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     // 2. ✅ Fetch product using centralized helper
     console.log(`[FETCH] Fetching from Rainforest API...`);
-    
+
     const productData = await fetchCompleteProductData(asin, marketplace);
 
     if (!productData) {
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     // 4. ✅ Save using centralized helper (isMyProduct = true)
     console.log(`[FETCH] Saving as MY PRODUCT (isMyProduct=true)...`);
-    
+
     await saveProductToDatabase(
       productData,
       marketplace,
@@ -109,8 +109,60 @@ export async function POST(request: NextRequest) {
 
     console.log(`[FETCH] My Product saved (${Date.now() - startTime}ms)`);
 
-    // 5. Handle related products
-    console.log(`[FETCH] Skipping related products (search flow)`);
+    // 5. ✅ FIXED: Extract related products with search fallback
+    let suggestedCompetitors: any[] = [];
+    let stats: any = {
+      competitorsFound: 0,
+      processingTime: `${Date.now() - startTime}ms`,
+      primarySource: "none",
+      sources: {},
+    };
+
+    if (!skipRelatedProducts) {
+      console.log(`[FETCH] Extracting related products from product data...`);
+
+      // ✅ Try to extract from product data first
+      const { extractRelatedProductsFromData, searchSimilarProducts } =
+        await import("@/lib/rainforest-helpers");
+      suggestedCompetitors = await extractRelatedProductsFromData(productData);
+
+      // ✅ If no related products found, use search fallback
+      if (suggestedCompetitors.length === 0) {
+        console.log(
+          `[FETCH] No related products in API response, trying search fallback...`
+        );
+        suggestedCompetitors = await searchSimilarProducts(
+          productData,
+          marketplace,
+          10
+        );
+      }
+
+      // Calculate stats
+      const sourceCounts: Record<string, number> = {};
+      suggestedCompetitors.forEach((comp) => {
+        sourceCounts[comp.source] = (sourceCounts[comp.source] || 0) + 1;
+      });
+
+      const primarySource =
+        Object.keys(sourceCounts).length > 0
+          ? Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0][0]
+          : "none";
+
+      stats = {
+        competitorsFound: suggestedCompetitors.length,
+        processingTime: `${Date.now() - startTime}ms`,
+        primarySource,
+        sources: sourceCounts,
+      };
+
+      console.log(
+        `[FETCH] ✅ Total competitors: ${suggestedCompetitors.length}`,
+        stats
+      );
+    } else {
+      console.log(`[FETCH] Skipping related products (search flow)`);
+    }
 
     const totalTime = Date.now() - startTime;
     console.log(`[FETCH] COMPLETE in ${totalTime}ms`);
@@ -141,13 +193,8 @@ export async function POST(request: NextRequest) {
         hasVideo: savedProduct?.hasVideo,
         hasAPlusContent: savedProduct?.hasAPlusContent,
       },
-      suggestedCompetitors: [],
-      stats: {
-        competitorsFound: 0,
-        processingTime: `${totalTime}ms`,
-        primarySource: "none",
-        sources: {},
-      },
+      suggestedCompetitors,
+      stats,
       message: "Product fetched successfully",
     });
   } catch (error: any) {
