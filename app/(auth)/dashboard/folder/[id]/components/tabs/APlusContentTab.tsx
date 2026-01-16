@@ -300,9 +300,9 @@ function APlusContentCard({
         {/* Empty State */}
         <div className="p-12 text-center">
           <AlertCircle className="h-16 w-16 mx-auto mb-4 text-slate-300" />
-          <p className="font-semibold text-slate-600 mb-1">No A+ Content</p>
+          <p className="font-semibold text-slate-600 mb-1">No Brand Story</p>
           <p className="text-sm text-slate-500">
-            This product doesn't have enhanced A+ content
+            This product doesn't have enhanced Brand Story
           </p>
         </div>
       </div>
@@ -477,7 +477,7 @@ function APlusContentCard({
           <div className="p-12 text-center">
             <Info className="h-12 w-12 mx-auto mb-3 text-slate-300" />
             <p className="text-sm text-slate-500">
-              A+ Content data is available but contains no displayable modules
+              Brand story data is available but contains no displayable modules
             </p>
           </div>
         )}
@@ -496,21 +496,6 @@ export function APlusContentTab({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between p-6 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg">
-            <Sparkles className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">A+ Content</h2>
-            <p className="text-sm text-slate-600 mt-0.5">
-              Enhanced product content - Amazon-style display
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Products Grid */}
       <div
         className="grid gap-6"

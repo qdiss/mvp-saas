@@ -1,5 +1,5 @@
 // lib/rainforest-helpers.ts
-// ✅ FINAL FIX: Videos insert one-by-one to avoid SQL limits
+// ✅ UPDATED: Added fetchRelatedProducts for competitors
 
 import { db } from "@/database/client";
 import {
@@ -478,5 +478,230 @@ export async function fetchCompleteProductData(
     a_plus_third_party: "true",
   });
 
+  // ✅ Return full data object, not just data.product
+  // This includes also_bought, also_viewed, etc. in the product object
   return data.product;
+}
+
+/**
+ * ✅ NEW: Fallback search for related products when API doesn't provide them
+ */
+export async function searchSimilarProducts(
+  productData: any,
+  marketplace: string = "com",
+  maxResults: number = 10
+) {
+  console.log(`[SEARCH FALLBACK] Searching for similar products...`);
+
+  try {
+    // Build search query from product data
+    const brand = productData.brand || "";
+    const category =
+      productData.search_alias?.title ||
+      productData.categories?.[0]?.name ||
+      "";
+
+    // Create search query (brand + category or just category)
+    let searchQuery = "";
+    if (brand && category) {
+      searchQuery = `${brand} ${category}`;
+    } else if (category) {
+      searchQuery = category;
+    } else if (brand) {
+      searchQuery = brand;
+    } else {
+      // Last resort: use first few words of title
+      const titleWords =
+        productData.title?.split(" ").slice(0, 3).join(" ") || "";
+      searchQuery = titleWords;
+    }
+
+    if (!searchQuery) {
+      console.log(`[SEARCH FALLBACK] ❌ No search query possible`);
+      return [];
+    }
+
+    console.log(`[SEARCH FALLBACK] Query: "${searchQuery}"`);
+
+    const data = await fetchFromRainforest({
+      type: "search",
+      amazon_domain: `amazon.${marketplace}`,
+      search_term: searchQuery,
+      max_page: 1,
+    });
+
+    const results = data.search_results || [];
+    const relatedProducts = new Map<string, any>();
+
+    results.forEach((item: any) => {
+      // Skip the original product
+      if (item.asin === productData.asin) return;
+
+      // Skip if already have enough
+      if (relatedProducts.size >= maxResults) return;
+
+      relatedProducts.set(item.asin, {
+        asin: item.asin,
+        title: item.title,
+        imageUrl: item.image,
+        link: item.link,
+        price: item.price?.value || 0,
+        currency: item.price?.currency || "USD",
+        rating: item.rating || 0,
+        ratingsTotal: item.ratings_total || 0,
+        brand: item.brand,
+        source: "search_fallback",
+      });
+    });
+
+    const competitors = Array.from(relatedProducts.values());
+    console.log(
+      `[SEARCH FALLBACK] ✅ Found ${competitors.length} products via search`
+    );
+
+    return competitors;
+  } catch (error: any) {
+    console.error(`[SEARCH FALLBACK] ❌ Search failed:`, error.message);
+    return [];
+  }
+}
+//  * (No separate API call needed - data is already in product response)
+//  */
+export async function extractRelatedProductsFromData(productData: any) {
+  console.log(`[RELATED] Extracting related products...`);
+
+  // ✅ DEBUG: Log what fields we have
+  console.log(`[RELATED DEBUG] Available fields:`, {
+    has_also_bought: !!productData.also_bought,
+    also_bought_length: productData.also_bought?.length || 0,
+    has_also_viewed: !!productData.also_viewed,
+    also_viewed_length: productData.also_viewed?.length || 0,
+    has_frequently_bought_together: !!productData.frequently_bought_together,
+    frequently_bought_together_length:
+      productData.frequently_bought_together?.products?.length || 0,
+    has_similar_to_consider: !!productData.similar_to_consider,
+    similar_to_consider_length: productData.similar_to_consider?.length || 0,
+    available_keys: Object.keys(productData).filter(
+      (k) =>
+        k.includes("also") ||
+        k.includes("similar") ||
+        k.includes("bought") ||
+        k.includes("viewed") ||
+        k.includes("related") ||
+        k.includes("compare")
+    ),
+  });
+
+  const relatedProducts = new Map<string, any>();
+
+  // Extract from also_bought (already in product response!)
+  if (productData.also_bought?.length > 0) {
+    console.log(
+      `[RELATED] Found ${productData.also_bought.length} also_bought`
+    );
+    productData.also_bought.forEach((item: any) => {
+      if (item.asin && item.asin !== productData.asin) {
+        relatedProducts.set(item.asin, {
+          asin: item.asin,
+          title: item.title,
+          imageUrl: item.image,
+          link: item.link,
+          price: item.price?.value || 0,
+          currency: item.price?.currency || "USD",
+          rating: item.rating || 0,
+          ratingsTotal: item.ratings_total || 0,
+          brand: null,
+          source: "also_bought",
+        });
+      }
+    });
+  }
+
+  // Extract from also_viewed
+  if (productData.also_viewed?.length > 0) {
+    console.log(
+      `[RELATED] Found ${productData.also_viewed.length} also_viewed`
+    );
+    productData.also_viewed.forEach((item: any) => {
+      if (
+        item.asin &&
+        item.asin !== productData.asin &&
+        !relatedProducts.has(item.asin)
+      ) {
+        relatedProducts.set(item.asin, {
+          asin: item.asin,
+          title: item.title,
+          imageUrl: item.image,
+          link: item.link,
+          price: item.price?.value || 0,
+          currency: item.price?.currency || "USD",
+          rating: item.rating || 0,
+          ratingsTotal: item.ratings_total || 0,
+          brand: null,
+          source: "also_viewed",
+        });
+      }
+    });
+  }
+
+  // Extract from frequently_bought_together
+  if (productData.frequently_bought_together?.products?.length > 0) {
+    console.log(
+      `[RELATED] Found ${productData.frequently_bought_together.products.length} frequently_bought_together`
+    );
+    productData.frequently_bought_together.products.forEach((item: any) => {
+      if (
+        item.asin &&
+        item.asin !== productData.asin &&
+        !relatedProducts.has(item.asin)
+      ) {
+        relatedProducts.set(item.asin, {
+          asin: item.asin,
+          title: item.title,
+          imageUrl: item.image,
+          link: item.link,
+          price: item.price?.value || 0,
+          currency: item.price?.currency || "USD",
+          rating: 0,
+          ratingsTotal: 0,
+          brand: null,
+          source: "frequently_bought_together",
+        });
+      }
+    });
+  }
+
+  // ✅ NEW: Try similar_to_consider if available
+  if (productData.similar_to_consider?.length > 0) {
+    console.log(
+      `[RELATED] Found ${productData.similar_to_consider.length} similar_to_consider`
+    );
+    productData.similar_to_consider.forEach((item: any) => {
+      if (
+        item.asin &&
+        item.asin !== productData.asin &&
+        !relatedProducts.has(item.asin)
+      ) {
+        relatedProducts.set(item.asin, {
+          asin: item.asin,
+          title: item.title,
+          imageUrl: item.image,
+          link: item.link,
+          price: item.price?.value || 0,
+          currency: item.price?.currency || "USD",
+          rating: item.rating || 0,
+          ratingsTotal: item.ratings_total || 0,
+          brand: item.brand,
+          source: "similar_to_consider",
+        });
+      }
+    });
+  }
+
+  const competitors = Array.from(relatedProducts.values());
+  console.log(
+    `[RELATED] ✅ Found ${competitors.length} unique related products`
+  );
+
+  return competitors;
 }

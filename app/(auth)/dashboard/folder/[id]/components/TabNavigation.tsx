@@ -54,7 +54,7 @@ export function TabNavigation({
     },
     {
       id: "aplus" as TabType,
-      label: "A+ Content",
+      label: "Brand Story",
       icon: Sparkles,
       description: "Enhanced content & brand story",
     },
