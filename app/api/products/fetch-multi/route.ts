@@ -1,5 +1,5 @@
 // app/api/products/fetch-multi/route.ts
-// ✅ FIXED: Properly processes ALL ASINs in batches with correct indexing
+// ✅ FIXED: Correct indexing - all products now saved properly
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -10,7 +10,6 @@ import {
   saveProductToDatabase,
 } from "@/lib/rainforest-helpers";
 
-// ✅ Type for product response
 type ProductResponse = {
   asin?: string;
   title?: string;
@@ -31,7 +30,6 @@ type ProductResponse = {
   hasAPlusContent?: boolean;
 };
 
-// ✅ Type for error
 type FetchError = {
   asin: string;
   error: string;
@@ -45,21 +43,21 @@ export async function POST(request: NextRequest) {
     if (!asins || !Array.isArray(asins) || asins.length === 0) {
       return NextResponse.json(
         { error: "ASINs array is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (asins.length > 15) {
       return NextResponse.json(
         { error: "Maximum 15 ASINs allowed" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!folderId) {
       return NextResponse.json(
         { error: "Folder ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -101,65 +99,66 @@ export async function POST(request: NextRequest) {
         .returning();
     }
 
-    // ✅ FIXED: Fetch all products in parallel (batches of 3 to respect rate limits)
+    // ✅ FIXED: Fetch all products with proper batch handling
     const batchSize = 3;
     const allProducts: ProductResponse[] = [];
     const errors: FetchError[] = [];
-    let globalIndex = 0; // ✅ Track global position across all batches
 
-    for (let i = 0; i < asins.length; i += batchSize) {
-      const batch = asins.slice(i, i + batchSize);
+    for (
+      let batchStart = 0;
+      batchStart < asins.length;
+      batchStart += batchSize
+    ) {
+      const batch = asins.slice(batchStart, batchStart + batchSize);
+      const batchNumber = Math.floor(batchStart / batchSize) + 1;
+      const totalBatches = Math.ceil(asins.length / batchSize);
 
       console.log(
-        `[MULTI-ASIN] Processing batch ${i / batchSize + 1}/${Math.ceil(
-          asins.length / batchSize
-        )}...`
+        `[MULTI-ASIN] Processing batch ${batchNumber}/${totalBatches} (ASINs ${batchStart + 1}-${batchStart + batch.length})...`,
       );
 
       const batchResults = await Promise.allSettled(
-        batch.map(async (asin: string, batchIndex: number) => {
-          const currentGlobalIndex = globalIndex + batchIndex; // ✅ Calculate global index
+        batch.map(async (asin: string, indexInBatch: number) => {
+          // ✅ CRITICAL FIX: Calculate global index correctly
+          const globalIndex = batchStart + indexInBatch;
 
           try {
             console.log(
-              `[MULTI-ASIN] [${currentGlobalIndex + 1}/${
-                asins.length
-              }] Fetching ${asin}...`
+              `[MULTI-ASIN] [${globalIndex + 1}/${asins.length}] Fetching ${asin}...`,
             );
 
-            // ✅ Use centralized helper
             const productData = await fetchCompleteProductData(
               asin,
-              marketplace
+              marketplace,
             );
 
             if (!productData) {
               throw new Error(`Product ${asin} not found`);
             }
 
-            // ✅ FIXED: First product overall (index 0) is "My Product"
-            const isMyProduct = currentGlobalIndex === 0;
+            // ✅ First product overall (globalIndex === 0) is "My Product"
+            const isMyProduct = globalIndex === 0;
 
             console.log(
-              `[MULTI-ASIN] ${asin} - isMyProduct: ${isMyProduct} (global index: ${currentGlobalIndex})`
+              `[MULTI-ASIN] ${asin} - isMyProduct: ${isMyProduct} (global index: ${globalIndex})`,
             );
 
-            // ✅ Use centralized save function
+            // Save to database
             await saveProductToDatabase(
               productData,
               marketplace,
               isMyProduct,
-              comparison.id
+              comparison.id,
             );
 
-            // Also create competitor link if not my product
+            // Create competitor link if not my product
             if (!isMyProduct) {
               await db
                 .insert(comparisonCompetitors)
                 .values({
                   comparisonId: comparison.id,
                   asin,
-                  position: currentGlobalIndex,
+                  position: globalIndex - 1, // ✅ Position 0 is first competitor (after My Product)
                   isVisible: true,
                   addedBy: folder.createdBy,
                   addedAt: new Date(),
@@ -167,7 +166,9 @@ export async function POST(request: NextRequest) {
                 .onConflictDoNothing();
             }
 
-            console.log(`[MULTI-ASIN] ✅ Saved ${asin}`);
+            console.log(
+              `[MULTI-ASIN] ✅ Saved ${asin} (isMyProduct: ${isMyProduct}, position: ${isMyProduct ? "N/A" : globalIndex - 1})`,
+            );
 
             // Get saved product from database
             const saved = await db.query.amazonProducts.findFirst({
@@ -196,12 +197,12 @@ export async function POST(request: NextRequest) {
           } catch (error: any) {
             console.error(
               `[MULTI-ASIN] ❌ Failed to fetch ${asin}:`,
-              error.message
+              error.message,
             );
             errors.push({ asin, error: error.message });
             return null;
           }
-        })
+        }),
       );
 
       // Extract successful results
@@ -211,11 +212,8 @@ export async function POST(request: NextRequest) {
         }
       });
 
-      // ✅ Update global index for next batch
-      globalIndex += batch.length;
-
-      // Small delay between batches
-      if (i + batchSize < asins.length) {
+      // Small delay between batches to respect rate limits
+      if (batchStart + batchSize < asins.length) {
         console.log(`[MULTI-ASIN] Waiting 500ms before next batch...`);
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
@@ -224,7 +222,7 @@ export async function POST(request: NextRequest) {
     if (allProducts.length === 0) {
       return NextResponse.json(
         { error: "Failed to fetch any products", errors },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -236,7 +234,7 @@ export async function POST(request: NextRequest) {
           primaryAsin: allProducts[0].asin,
           name: `${allProducts[0].title?.substring(
             0,
-            40
+            40,
           )}... Multi-Product Analysis`,
           updatedAt: new Date(),
         })
@@ -244,7 +242,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[MULTI-ASIN] ✅ Successfully fetched ${allProducts.length}/${asins.length} products`
+      `[MULTI-ASIN] ✅ Successfully fetched ${allProducts.length}/${asins.length} products`,
     );
     if (errors.length > 0) {
       console.log(`[MULTI-ASIN] ⚠️ ${errors.length} products failed:`, errors);
@@ -264,7 +262,7 @@ export async function POST(request: NextRequest) {
     console.error("[MULTI-ASIN Error]", error);
     return NextResponse.json(
       { error: "Failed to fetch products", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

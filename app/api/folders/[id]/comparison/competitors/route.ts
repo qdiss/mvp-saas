@@ -1,5 +1,5 @@
 // app/api/folders/[id]/comparison/competitors/route.ts
-// ✅ FINAL: Uses centralized helpers with videos_additional support
+// ✅ FIXED: Now APPENDS new competitors instead of replacing all
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/database/client";
@@ -12,7 +12,7 @@ import {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id: folderId } = await params;
@@ -28,13 +28,13 @@ export async function POST(
     console.log(
       `[COMPETITORS API] START: ${
         competitorAsins?.length || 0
-      } competitors for folder ${folderId}`
+      } NEW competitors for folder ${folderId}`,
     );
 
     if (!competitorAsins || competitorAsins.length === 0) {
       return NextResponse.json(
         { error: "No competitor ASINs provided" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -48,57 +48,85 @@ export async function POST(
     if (!comparison) {
       return NextResponse.json(
         { error: "Comparison not found" },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
-    // 2. Clear old competitors
-    await db
-      .delete(comparisonCompetitors)
-      .where(eq(comparisonCompetitors.comparisonId, comparison.id));
+    // ✅ 2. Get EXISTING competitors to preserve them
+    const existingCompetitors = await db
+      .select()
+      .from(comparisonCompetitors)
+      .where(eq(comparisonCompetitors.comparisonId, comparison.id))
+      .orderBy(comparisonCompetitors.position);
 
-    console.log(`[COMPETITORS] Cleared old competitors`);
-
-    // 3. Save competitor links
-    const competitorRecords = competitorAsins.map(
-      (asin: string, index: number) => {
-        const existingData = competitorData?.find((c: any) => c.asin === asin);
-        return {
-          comparisonId: comparison.id,
-          asin,
-          position: index,
-          isVisible: true,
-          matchScore: existingData?.matchScore?.toString() || null,
-          addedBy: comparison.createdBy || "system",
-          addedAt: new Date(),
-        };
-      }
+    console.log(
+      `[COMPETITORS] Found ${existingCompetitors.length} existing competitors`,
     );
+
+    // ✅ 3. Filter out duplicates (ASINs already in comparison)
+    const existingAsins = new Set(existingCompetitors.map((c) => c.asin));
+    const newAsins = competitorAsins.filter(
+      (asin: string) => !existingAsins.has(asin),
+    );
+
+    if (newAsins.length === 0) {
+      console.log(`[COMPETITORS] All ASINs already exist, nothing to add`);
+      return NextResponse.json({
+        success: true,
+        message: "All competitors already exist in comparison",
+        competitorsCount: 0,
+        duplicatesSkipped: competitorAsins.length,
+      });
+    }
+
+    console.log(
+      `[COMPETITORS] Adding ${newAsins.length} new competitors (${
+        competitorAsins.length - newAsins.length
+      } duplicates skipped)`,
+    );
+
+    // ✅ 4. Calculate starting position (append after existing)
+    const maxPosition =
+      existingCompetitors.length > 0
+        ? Math.max(...existingCompetitors.map((c) => c.position || 0))
+        : -1;
+
+    // ✅ 5. Save NEW competitor links only
+    const competitorRecords = newAsins.map((asin: string, index: number) => {
+      const existingData = competitorData?.find((c: any) => c.asin === asin);
+      return {
+        comparisonId: comparison.id,
+        asin,
+        position: maxPosition + 1 + index, // ✅ Append after existing
+        isVisible: true,
+        matchScore: existingData?.matchScore?.toString() || null,
+        addedBy: comparison.createdBy || "system",
+        addedAt: new Date(),
+      };
+    });
 
     await db.insert(comparisonCompetitors).values(competitorRecords);
     console.log(
-      `[COMPETITORS] Saved ${competitorRecords.length} competitor links`
+      `[COMPETITORS] Saved ${competitorRecords.length} new competitor links`,
     );
 
-    // 4. Fetch full data for each competitor
+    // 6. Fetch full data for each NEW competitor
     if (!fetchInBackground) {
       // Synchronous fetch (wait for all)
       console.log(`[COMPETITORS] Fetching full data (synchronous)...`);
 
-      const fetchPromises = competitorAsins.map(async (asin: string) => {
+      const fetchPromises = newAsins.map(async (asin: string) => {
         try {
           console.log(`[COMPETITORS] Fetching ${asin}...`);
 
-          // ✅ Use centralized helper
           const productData = await fetchCompleteProductData(asin, marketplace);
 
           if (productData) {
-            // ✅ Save with isMyProduct=false (competitor)
             await saveProductToDatabase(
               productData,
               marketplace,
               false,
-              comparison.id
+              comparison.id,
             );
 
             console.log(`[COMPETITORS] ✅ Successfully saved ${asin}`);
@@ -108,7 +136,7 @@ export async function POST(
         } catch (error: any) {
           console.error(
             `[COMPETITORS] ❌ Failed to fetch ${asin}:`,
-            error.message
+            error.message,
           );
           return { asin, success: false, error: error.message };
         }
@@ -118,26 +146,28 @@ export async function POST(
       const successful = results.filter((r) => r.success).length;
 
       console.log(
-        `[COMPETITORS] ✅ Complete: ${successful}/${competitorAsins.length} competitors fetched`
+        `[COMPETITORS] ✅ Complete: ${successful}/${newAsins.length} new competitors fetched`,
       );
 
       return NextResponse.json({
         success: true,
-        message: `Saved ${successful} competitors with full data including videos`,
+        message: `Added ${successful} new competitors (${existingCompetitors.length} existing preserved)`,
         competitorsCount: successful,
+        existingCount: existingCompetitors.length,
+        totalCount: existingCompetitors.length + successful,
+        duplicatesSkipped: competitorAsins.length - newAsins.length,
         results,
       });
     } else {
       // Background fetch (return immediately, fetch in background)
       console.log(`[COMPETITORS] Starting background fetch...`);
 
-      // Fire and forget
       Promise.all(
-        competitorAsins.map(async (asin: string) => {
+        newAsins.map(async (asin: string) => {
           try {
             const productData = await fetchCompleteProductData(
               asin,
-              marketplace
+              marketplace,
             );
 
             if (productData) {
@@ -145,28 +175,30 @@ export async function POST(
                 productData,
                 marketplace,
                 false,
-                comparison.id
+                comparison.id,
               );
             }
           } catch (error: any) {
             console.error(`[COMPETITORS BG] Failed ${asin}:`, error.message);
           }
-        })
+        }),
       ).then(() => {
         console.log(`[COMPETITORS] Background fetch complete`);
       });
 
       return NextResponse.json({
         success: true,
-        message: `Started fetching ${competitorAsins.length} competitors in background`,
-        competitorsCount: competitorAsins.length,
+        message: `Started fetching ${newAsins.length} new competitors in background`,
+        competitorsCount: newAsins.length,
+        existingCount: existingCompetitors.length,
+        duplicatesSkipped: competitorAsins.length - newAsins.length,
       });
     }
   } catch (error: any) {
     console.error("[COMPETITORS API Error]", error);
     return NextResponse.json(
       { error: "Failed to save competitors", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

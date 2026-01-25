@@ -109,7 +109,7 @@ export default function CompetitiveAnalysisPage({
 
             console.log(
               "[DEBUG] myProduct state set with photos:",
-              photos.length
+              photos.length,
             );
           }
 
@@ -152,7 +152,7 @@ export default function CompetitiveAnalysisPage({
                   comparisonId: comparison.id,
                   rawData: comp.rawData,
                 };
-              })
+              }),
             );
           }
 
@@ -184,7 +184,7 @@ export default function CompetitiveAnalysisPage({
 
   const toggleCompetitor = (id: string) => {
     setCompetitors((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
+      prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p)),
     );
   };
 
@@ -199,12 +199,12 @@ export default function CompetitiveAnalysisPage({
 
   const handleProductAdded = async (
     product: any,
-    selectedCompetitors: any[]
+    selectedCompetitors: any[],
   ) => {
     console.log("[handleProductAdded] Product added:", product.title);
     await loadExistingComparison();
     console.log(
-      "[handleProductAdded] Comparison reloaded, folder name preserved"
+      "[handleProductAdded] Comparison reloaded, folder name preserved",
     );
   };
 
